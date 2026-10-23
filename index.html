@@ -62,7 +62,24 @@ svg.doodle .fill { fill: var(--ink); stroke: none; }
 
 main { padding-block: 4px calc(var(--tabbar) + 32px + env(safe-area-inset-bottom, 0px)); }
 .view { display: flex; flex-direction: column; gap: 14px; }
-.view-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 4px; }
+.view-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-top: 4px; }
+.step-title { display: flex; flex-direction: column; gap: 2px; }
+.step-title h2 { font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+.eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--on-bg-muted); }
+.step-foot { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 4px; }
+.pill.next { min-height: 52px; width: 100%; }
+.sub.on-bg { color: var(--on-bg-muted); text-align: center; font-size: 13px; margin: 0; }
+.note-box { display: flex; flex-direction: column; gap: 6px; }
+.note-in { font: 400 15px/1.35 var(--sans); width: 100%; padding: 10px 14px; border: 0; border-radius: 14px; background: rgba(23, 22, 20, .05); color: var(--ink); resize: none; }
+.note-in:focus { outline: 1.5px solid var(--ink); }
+.dbtn .mks { display: flex; gap: 3px; }
+.dbtn .nk { width: 6px; height: 6px; border-radius: 50%; background: transparent; }
+.dbtn.noted .nk { background: var(--lavender); }
+.dbtn.noted[aria-pressed="true"] .nk { background: var(--lavender); }
+.extra-add { display: flex; gap: 8px; }
+.extra-add .have-input { flex: 1; min-width: 0; border-radius: 99px; }
+.extra-add .pill { width: 52px; min-height: 52px; padding: 0; flex: none; }
+.xtag { display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--olive); vertical-align: 2px; }
 h2 { font-weight: 300; font-size: 30px; line-height: 1.1; margin: 0; letter-spacing: -.01em; }
 h2 b { font-weight: 700; }
 .hint { font-size: 14px; color: var(--ink); margin: -6px 0 0; }
@@ -293,9 +310,9 @@ dialog::backdrop { background: rgba(35, 64, 63, .55); }
 
 <nav class="tabbar" aria-label="Views">
   <div class="wrap" role="tablist">
-    <button class="tab" role="tab" data-view="catalog" id="tab-catalog"><span class="ico" data-icon="book"></span>Recipes<span class="badge" id="bCatalog"></span></button>
-    <button class="tab" role="tab" data-view="week" id="tab-week"><span class="ico" data-icon="calendar"></span>This week<span class="badge" id="bWeek"></span></button>
-    <button class="tab" role="tab" data-view="list" id="tab-list"><span class="ico" data-icon="basket"></span>Shopping<span class="badge" id="bList"></span></button>
+    <button class="tab" role="tab" data-view="catalog" id="tab-catalog"><span class="ico" data-icon="book"></span>1 · Recipes<span class="badge" id="bCatalog"></span></button>
+    <button class="tab" role="tab" data-view="week" id="tab-week"><span class="ico" data-icon="calendar"></span>2 · This week<span class="badge" id="bWeek"></span></button>
+    <button class="tab" role="tab" data-view="list" id="tab-list"><span class="ico" data-icon="basket"></span>3 · Groceries<span class="badge" id="bList"></span></button>
   </div>
 </nav>
 
@@ -332,7 +349,7 @@ window.STANDALONE = true;
 const SECTIONS = ["Produce", "Meat & fish", "Dairy & eggs", "Bakery", "Pantry", "Spices & sauces", "Frozen", "Other"];
 const MAX = 5;
 let recipes = [];
-let plan = { picked: [], have: {}, cart: {}, days: {} };
+let plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [] };
 let readOnly = false;
 let planRef = null;
 let dbRef = null;
@@ -660,14 +677,19 @@ function toggleFlag(field, key) {
 
 // ---- recipes view
 function recipeRow(r) {
+  const picked = plan.picked.includes(r.id);
+  const full = !picked && plan.picked.length >= MAX;
   const meta = [r.time, (r.ingredients || []).length + " ingredients"].filter(Boolean).join(" · ");
-  return el("div", { class: "row" },
+  return el("div", { class: "row" + (picked ? " picked" : "") },
     el("button", { class: "row-main", onclick: () => openRecipe(r) },
       doodleFor(r),
       el("span", { class: "row-text" },
         el("span", { class: "row-title" }, r.title),
         el("span", { class: "row-meta" }, meta),
-        el("span", { class: "tags" }, el("span", { class: "tag p-" + proteinOf(r).fam }, proteinOf(r).label)))));
+        el("span", { class: "tags" }, el("span", { class: "tag p-" + proteinOf(r).fam }, proteinOf(r).label)))),
+    el("button", { class: "pick", disabled: readOnly || full, "aria-pressed": picked ? "true" : "false",
+      "aria-label": (picked ? "Remove from this week: " : "Choose for this week: ") + r.title, onclick: () => togglePick(r.id) },
+      icon(picked ? "check" : "plus")));
 }
 function pendingRow(i) {
   const err = i.status === "error";
@@ -681,18 +703,24 @@ function pendingRow(i) {
       try { await dbRef.collection("inbox").doc(i.id).delete(); } catch { toast("Couldn't remove it. Try again."); }
     } }, icon("close")));
 }
+function stepHead(n, title, ...extra) {
+  return el("div", { class: "view-head" },
+    el("div", { class: "step-title" }, el("span", { class: "eyebrow" }, "Step " + n + " of 3"), el("h2", {}, title)), ...extra);
+}
+function nextStep(label, view, on = true) {
+  return el("button", { class: "pill next", disabled: !on, onclick: () => show(view) }, label, icon("arrow"));
+}
 function summaryCard() {
   const n = plan.picked.length;
   return el("div", { class: "summary" },
-    el("strong", {}, n === MAX ? "Your five are picked" : n + " of " + MAX + " picked"),
-    el("small", {}, n === MAX ? "Give each one a day in This week." : "Each makes 2 dinners and 2 lunchboxes. Tap + to add one."),
+    el("strong", {}, n === MAX ? "Your five are chosen" : n + " of " + MAX + " chosen"),
+    el("small", {}, n ? "Next, give each one a day." : "Tap + on the recipes you want to cook this week. Each makes 2 dinners and 2 lunchboxes."),
     el("div", { class: "dots" }, Array.from({ length: MAX }, (_, i) => el("span", { class: "dot" + (i < n ? " on" : "") }))),
     doodle("pot"));
 }
 function renderCatalog() {
   const v = $("#v-catalog");
-  const head = el("div", { class: "view-head" },
-    el("h2", {}, "Our ", el("b", {}, "recipes")),
+  const head = stepHead(1, "Recipes",
     el("button", { class: "pill", id: "addBtn", disabled: readOnly, onclick: () => openAddForm("link") }, icon("plus"), "Add"));
   const pending = [...localJobs, ...inbox.filter((i) => i.status !== "done")].map(pendingRow);
   if (!recipes.length && !pending.length) {
@@ -712,7 +740,8 @@ function renderCatalog() {
     fchip("all", "All", recipes.length),
     kinds.map(([id, label]) => fchip(id, label, counts[id])));
   const shown = recipes.filter((r) => proteinFilter === "all" || proteinOf(r).id === proteinFilter);
-  fill(v, head, pending.length ? el("div", { class: "rows" }, pending) : null, filters, el("div", { class: "rows" }, shown.map(recipeRow)));
+  fill(v, head, summaryCard(), pending.length ? el("div", { class: "rows" }, pending) : null, filters, el("div", { class: "rows" }, shown.map(recipeRow)),
+    el("div", { class: "step-foot" }, nextStep("Next: plan the week", "week", plan.picked.length > 0)));
 }
 
 // "What can I cook?": type what's in the fridge, get recipes ranked by how much of it they use.
@@ -774,22 +803,36 @@ function renderWeek() {
   const today = ymd(new Date());
   if (!selDay || !days.some((d) => d.key === selDay)) selDay = (days.find((d) => d.key === today) || days[0]).key;
   const picked = pickedRecipes();
-  const head = el("div", { class: "view-head" }, el("h2", {}, "This ", el("b", {}, "week")),
+  const head = stepHead(2, "This week",
     el("button", { class: "pill", id: "planBtn", disabled: readOnly || !recipes.length, onclick: () => openPlanner() }, icon("plus"), "Add"));
   if (!picked.length) {
     v.replaceChildren(head, el("div", { class: "empty" }, doodle("bowl", "lg"),
-      el("h3", {}, "Nothing planned yet"),
-      el("p", {}, "Tap Add, choose a recipe and the day you'll cook it. Up to five a week."),
-      el("button", { class: "pill", disabled: readOnly || !recipes.length, onclick: () => openPlanner() }, icon("plus"), "Add a recipe")));
+      el("h3", {}, "No recipes chosen yet"),
+      el("p", {}, "Start in Recipes: choose up to five for the week, then give each one a day here."),
+      el("button", { class: "pill", onclick: () => show("catalog") }, "Go to Recipes", icon("arrow"))));
     return;
   }
   const strip = el("div", { class: "strip", role: "group", "aria-label": "Days of the week" }, days.map((d) => {
     const has = picked.some((r) => plan.days[r.id] === d.key);
-    return el("button", { class: "dbtn" + (has ? " has" : "") + (d.key === today ? " today" : ""), "aria-pressed": d.key === selDay ? "true" : "false",
+    const nt = !!(plan.notes[d.key] || "").trim();
+    return el("button", { class: "dbtn" + (has ? " has" : "") + (nt ? " noted" : "") + (d.key === today ? " today" : ""), "aria-pressed": d.key === selDay ? "true" : "false",
       "aria-label": d.long + (has ? ", dinner planned" : ""), onclick: () => { selDay = d.key; renderWeek(); } },
-      el("span", { class: "dn" }, d.short), el("span", { class: "dd" }, d.num), el("span", { class: "mk" }));
+      el("span", { class: "dn" }, d.short), el("span", { class: "dd" }, d.num), el("span", { class: "mks" }, el("span", { class: "mk" }), el("span", { class: "nk" })));
   }));
   const sel = days.find((d) => d.key === selDay);
+  const note = el("textarea", { class: "note-in", rows: "2", maxlength: "200", disabled: readOnly, placeholder: "Add a reminder, e.g. Anatole's afterwork", "aria-label": "Note for " + sel.long });
+  note.value = plan.notes[selDay] || "";
+  let noteTimer;
+  const saveNote = () => {
+    clearTimeout(noteTimer);
+    const t = note.value.trim();
+    if ((plan.notes[selDay] || "") === t) return;
+    if (t) plan.notes[selDay] = t; else delete plan.notes[selDay];
+    savePlan();
+    const b = strip.querySelector('[aria-pressed="true"]'); if (b) b.classList.toggle("noted", !!t);
+  };
+  note.addEventListener("input", () => { clearTimeout(noteTimer); noteTimer = setTimeout(saveNote, 700); });
+  note.addEventListener("blur", saveNote);
   const meals = picked.filter((r) => plan.days[r.id] === selDay);
   const unplanned = picked.filter((r) => !days.some((d) => d.key === plan.days[r.id]));
   const panel = el("div", { class: "panel" },
@@ -800,7 +843,8 @@ function renderWeek() {
       : el("p", { class: "sub" }, "No dinner planned yet."),
     unplanned.length ? [el("p", { class: "label" }, "Cook this day"),
       el("div", { class: "chips" }, unplanned.map((r) => el("button", { class: "chip", disabled: readOnly, onclick: () => setDay(r.id, selDay) }, "+ " + r.title)))]
-      : (meals.length ? null : el("p", { class: "sub" }, "All your picks have a day.")));
+      : (meals.length ? null : el("p", { class: "sub" }, "All your picks have a day.")),
+    el("label", { class: "note-box" }, el("span", { class: "label" }, "Note"), note));
   const list = el("div", { class: "rows" }, picked.map((r) => {
     const d = days.find((x) => x.key === plan.days[r.id]);
     return el("div", { class: "row" },
@@ -811,11 +855,14 @@ function renderWeek() {
   }));
   const resetBox = el("div", { class: "confirm" });
   const restore = () => resetBox.replaceChildren(el("button", { class: "text-btn", disabled: readOnly, onclick: () => resetBox.replaceChildren(
-    el("span", {}, "Clear picks, days and ticks?"),
-    el("button", { class: "pill", onclick: () => { plan = { picked: [], have: {}, cart: {}, days: {} }; savePlan(); render(); toast("New week started"); } }, "Clear"),
+    el("span", {}, "Clear picks, days, notes and the grocery list?"),
+    el("button", { class: "pill", onclick: () => { plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [] }; savePlan(); render(); toast("New week started"); } }, "Clear"),
     el("button", { class: "pill ghost", onclick: restore }, "Cancel")) }, "Start a new week"));
   restore();
-  v.replaceChildren(head, strip, panel, el("p", { class: "label" }, "Your picks · " + picked.length + " of " + MAX), list, resetBox);
+  const undated = picked.filter((r) => !days.some((d) => d.key === plan.days[r.id])).length;
+  v.replaceChildren(head, strip, panel, el("p", { class: "label" }, "Your recipes · " + picked.length + " of " + MAX), list,
+    el("div", { class: "step-foot" }, undated ? el("p", { class: "sub on-bg" }, undated + (undated > 1 ? " recipes still need" : " recipe still needs") + " a day.") : null,
+      nextStep("Next: groceries", "list")), resetBox);
 }
 
 // ---- shopping view
@@ -842,40 +889,88 @@ function fold(key, cls, title, count, rows) {
   d.addEventListener("toggle", () => { folds[key] = d.open; });
   return d;
 }
-function shoppingItems() { return aggregate().filter((i) => !plan.have[i.key]); }
+function shoppingItems() { return [...aggregate(), ...extraItems()].filter((i) => !plan.have[i.key]); }
+// Grocery categories (Ale's): protein, vegetables, carbs & grains, fats, then dairy and other.
+const CATS = ["Protein", "Vegetables & fruit", "Carbs & grains", "Fats", "Dairy", "Other"];
+function catOf(i) {
+  const n = " " + (i.name || "").toLowerCase() + " ";
+  if (/\b(broth|stock|bouillon|caldo)\b/.test(n)) return "Other";
+  if (i.section === "Meat & fish" || PROTEINS.some(([, , , re]) => re.test(n))) return "Protein";
+  if (/\b(oils?|huile|aceite|butter|beurre|mantequilla|ghee|avocados?|avocats?|aguacates?|nuts?|almonds?|walnuts?|cashews?|peanuts?|hazelnuts?|pecans?|pistachios?|seeds?|pepitas|tahini|coconut milk|lait (?:de )?coco|cream|cr[eè]me|nata|olives?|mayonnaise|mayo)\b/.test(n)) return "Fats";
+  if (/\b(rice|riz|arroz|pasta|p[âa]tes|spaghetti|penne|noodles?|nouilles|fideos|quinoa|bread|pain|pan|baguette|tortillas?|wraps?|pitas?|couscous|bulgur|boulgour|oats?|flocons|avena|potato(?:es)?|pommes? de terre|patatas?|papas|flour|farine|harina|barley|polenta|gnocchi|semolina|cereal)\b/.test(n)) return "Carbs & grains";
+  if (i.section === "Dairy & eggs") return "Dairy";
+  if (i.section === "Produce") return "Vegetables & fruit";
+  if (i.section === "Frozen" && /\b(peas|spinach|beans|vegetables?|corn|broccoli)\b/.test(n)) return "Vegetables & fruit";
+  return "Other";
+}
+const pantryCheck = (i) => !i.extra && catOf(i) !== "Fats" && (i.section === "Spices & sauces" || /\b(salt|black pepper|pepper|vinegar|honey|sugar)\b/.test(i.key));
+function extraItems() {
+  return (plan.extras || []).map((x) => ({ key: "x:" + x.id, id: x.id, name: x.name, qty: x.qty || "", section: (AISLES.find(([, re]) => re.test(x.name.toLowerCase())) || ["Other"])[0], extra: true }));
+}
+function byCat(items) {
+  return CATS.map((c) => [c, items.filter((i) => catOf(i) === c).sort((a, b) => a.name.localeCompare(b.name))]).filter(([, l]) => l.length);
+}
+function addExtra(name) {
+  name = name.trim().replace(/\s+/g, " ");
+  if (!name || readOnly) return false;
+  const nm = name.charAt(0).toUpperCase() + name.slice(1);
+  if ((plan.extras || []).some((x) => keyOf(x.name) === keyOf(nm))) { toast(nm + " is already on the list"); return false; }
+  plan.extras = [...(plan.extras || []), { id: Date.now().toString(36), name: nm }];
+  render(); savePlan();
+  return true;
+}
+function removeExtra(id) {
+  if (readOnly) return;
+  plan.extras = (plan.extras || []).filter((x) => x.id !== id);
+  delete plan.cart["x:" + id];
+  render(); savePlan();
+}
+function extraRow(i) {
+  const on = !!plan.cart[i.key];
+  return el("div", { class: "li" + (on ? " done" : "") },
+    el("button", { class: "check" + (on ? " on" : ""), role: "checkbox", "aria-checked": on ? "true" : "false", "aria-label": "In the cart: " + i.name, disabled: readOnly, onclick: () => toggleFlag("cart", i.key) },
+      el("span", { class: "box" }, icon("check"))),
+    el("span", { class: "li-name" }, i.name, el("small", { class: "xtag" }, "Added")),
+    el("span", { class: "li-qty" }, ""),
+    el("button", { class: "home", "aria-label": "Remove " + i.name, title: "Remove", disabled: readOnly, onclick: () => removeExtra(i.id) }, icon("close")));
+}
 function renderList() {
   const v = $("#v-list");
-  const all = aggregate();
-  const head = el("div", { class: "view-head" }, el("h2", {}, "Shopping ", el("b", {}, "list")),
+  const all = [...aggregate(), ...extraItems()];
+  const head = stepHead(3, "Groceries",
     all.length ? el("button", { class: "pill ghost", onclick: copyList }, icon("copy"), "Copy") : null);
+  const input = el("input", { class: "have-input", type: "text", placeholder: "Add something else…", autocomplete: "off", enterkeyhint: "done", disabled: readOnly, "aria-label": "Add an item to the groceries" });
+  const addBox = el("form", { class: "extra-add", onsubmit: (e) => { e.preventDefault(); if (addExtra(input.value)) { input.value = ""; setTimeout(() => { const n = $("#v-list .extra-add input"); if (n) n.focus(); }); } } },
+    input, el("button", { class: "pill", type: "submit", disabled: readOnly, "aria-label": "Add" }, icon("plus")));
   if (!all.length) {
-    v.replaceChildren(head, el("div", { class: "empty" }, doodle("pot", "lg"),
+    v.replaceChildren(head, addBox, el("div", { class: "empty" }, doodle("pot", "lg"),
       el("h3", {}, "Nothing to buy yet"),
-      el("p", {}, "Pick recipes for the week and their ingredients show up here, grouped by aisle."),
-      el("button", { class: "pill", onclick: () => show("catalog") }, "Choose recipes", icon("arrow"))));
+      el("p", {}, "Choose recipes in step 1 and their ingredients show up here, sorted into protein, vegetables, carbs and fats. You can also add anything else above."),
+      el("button", { class: "pill", onclick: () => show("catalog") }, "Go to Recipes", icon("arrow"))));
     return;
   }
   const need = all.filter((i) => !plan.have[i.key]);
-  const main = need.filter((i) => !isStaple(i));
-  const staples = need.filter(isStaple).sort((a, b) => a.name.localeCompare(b.name));
+  const main = need.filter((i) => !pantryCheck(i));
+  const staples = need.filter(pantryCheck).sort((a, b) => a.name.localeCompare(b.name));
   const home = all.filter((i) => plan.have[i.key]).sort((a, b) => a.name.localeCompare(b.name));
   const inCart = need.filter((i) => plan.cart[i.key]).length;
   const pct = need.length ? Math.round((inCart / need.length) * 100) : 100;
   fill(v, head,
-    el("p", { class: "hint" }, "Tap the house on anything you already have at home."),
     el("div", { class: "summary" },
       el("strong", {}, need.length - inCart ? (need.length - inCart) + " left to buy" : "All done"),
-      el("small", {}, inCart + " of " + need.length + " in the cart"),
+      el("small", {}, inCart + " of " + need.length + " in the cart · tap the house if you already have it"),
       el("div", { class: "bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-label": "Shopping progress" }, el("i", { style: "width:" + pct + "%" })),
       doodle("bowl")),
-    ...grouped(main).map(([s, list]) => el("div", { class: "group" }, el("h4", {}, s), list.map(needRow))),
-    staples.length ? fold("staples", "", "Check the pantry", staples.length + " staples", staples.map(needRow)) : null,
+    addBox,
+    ...byCat(main).map(([c, list]) => el("div", { class: "group" }, el("h4", {}, c), list.map((i) => (i.extra ? extraRow(i) : needRow(i))))),
+    staples.length ? fold("staples", "", "Check the pantry", staples.length + " spices & sauces", staples.map(needRow)) : null,
     home.length ? fold("home", "at-home", "Already at home", home.length, home.map(homeRow)) : null);
 }
 async function copyList() {
   const left = shoppingItems().filter((i) => !plan.cart[i.key]);
-  const text = grouped(left).map(([s, l]) => s.toUpperCase() + "\n" + l.map((i) => "- " + i.name + (i.qty ? " (" + i.qty + ")" : "")).join("\n")).join("\n\n");
-  try { await navigator.clipboard.writeText(text || "Nothing to buy"); toast("Shopping list copied"); }
+  const text = byCat(left.filter((i) => !pantryCheck(i))).concat([["Check the pantry", left.filter(pantryCheck)]]).filter(([, l]) => l.length)
+    .map(([s, l]) => s.toUpperCase() + "\n" + l.map((i) => "- " + i.name + (i.qty ? " (" + i.qty + ")" : "")).join("\n")).join("\n\n");
+  try { await navigator.clipboard.writeText(text || "Nothing to buy"); toast("Grocery list copied"); }
   catch { toast("Copy isn't available here. Select the list and copy it by hand."); }
 }
 
@@ -911,8 +1006,8 @@ function openRecipe(r) {
         el("h3", { id: "dlgTitle" }, r.title),
         el("span", { class: "row-meta" }, [r.time, (r.servings || 4) + " portions"].filter(Boolean).join(" · "),
           r.sourceUrl ? [" · ", el("a", { href: r.sourceUrl, target: "_blank", rel: "noopener" }, r.source || "Original")] : null))),
-    el("button", { class: "pill" + (picked ? " ghost" : ""), disabled: readOnly || full, onclick: () => openPlanner(r.id) },
-      picked ? "In this week · change day" : "Add to this week", icon(picked ? "calendar" : "plus")),
+    el("button", { class: "pill" + (picked ? " ghost" : ""), disabled: readOnly || full, onclick: () => { togglePick(r.id); openRecipe(recipes.find((x) => x.id === r.id) || r); } },
+      picked ? "Chosen for this week" : "Choose for this week", icon(picked ? "check" : "plus")),
     el("div", {},
       el("h4", {}, "Ingredients · 4 portions"),
       el("ul", { class: "ing" }, (r.ingredients || []).map((i) =>
@@ -1183,7 +1278,8 @@ render();
   planRef.onSnapshot((snap) => {
     if (snap.metadata.hasPendingWrites) return;
     const d = snap.exists ? snap.data() : {};
-    plan = { picked: [...(d.picked || [])], have: { ...(d.have || {}) }, cart: { ...(d.cart || {}) }, days: { ...(d.days || {}) } };
+    plan = { picked: [...(d.picked || [])], have: { ...(d.have || {}) }, cart: { ...(d.cart || {}) }, days: { ...(d.days || {}) },
+      notes: { ...(d.notes || {}) }, extras: Array.isArray(d.extras) ? d.extras.filter((x) => x && x.id && x.name) : [] };
     render();
   }, () => {});
 })();
