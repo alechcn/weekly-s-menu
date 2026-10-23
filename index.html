@@ -184,6 +184,11 @@ h2 b { font-weight: 700; }
 .dbtn .dd { font-size: 20px; font-weight: 300; line-height: 1.2; }
 .dbtn .mk { width: 6px; height: 6px; border-radius: 50%; background: transparent; }
 .dbtn.has .mk { background: var(--orange); }
+.dbtn .ot { display: none; font-size: 10px; font-weight: 500; letter-spacing: .04em; color: var(--muted); line-height: 1; }
+.dbtn.out .ot { display: block; }
+.dbtn.out .mks { display: none; }
+.dbtn.out:not([aria-pressed="true"]) { background: rgba(247, 240, 230, .55); }
+.dbtn.out[aria-pressed="true"] .ot { color: var(--olive-soft); }
 .dbtn.today { box-shadow: inset 0 0 0 1.5px var(--ink); }
 .dbtn[aria-pressed="true"] { background: var(--ink); color: var(--card); }
 .dbtn[aria-pressed="true"] .dn { color: var(--lime); }
@@ -432,7 +437,7 @@ function weekDays() {
   const mon = planMonday();
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(mon); d.setDate(mon.getDate() + i);
-    return { key: ymd(d), short: d.toLocaleDateString("en-GB", { weekday: "short" }), num: d.getDate(), long: d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) };
+    return { key: ymd(d), out: i >= 4, short: d.toLocaleDateString("en-GB", { weekday: "short" }), num: d.getDate(), long: d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) };
   });
 }
 (() => {
@@ -516,7 +521,7 @@ const CANON = [
   ["Coconut milk", /\b(coconut milk|lait (?:de )?coco|leche de coco)\b/],
   ["Zucchini", /\b(zucchinis?|courgettes?|calabacin\w*)\b/],
   ["Pasta", /\b(pasta|p[âa]tes|spaghetti|penne|fusilli|linguine|tagliatelle)\b/],
-  ["Rice", /\b(rice|riz|arroz)\b/],
+  ["Rice", /\b(rice|riz|arroz)\b(?! (?:vinegar|wine|noodles?|paper|flour))/],
   ["Sweet potatoes", /\b(sweet potato\w*|patates? douces?|boniatos?|batatas?)\b/],
   ["Limes", /\b(limes?|citrons? verts?)\b/],
   ["Lemon", /\b(lemons?|citrons?|lim[oó]n\w*)\b/],
@@ -565,8 +570,9 @@ function aggregate() {
     const r = recipes.find((x) => x.id === id);
     if (!r) continue;
     for (const ing of r.ingredients || []) {
-      const k = keyOf(ing.name);
-      if (!map.has(k)) map.set(k, { key: k, name: ing.name, section: SECTIONS.includes(ing.section) ? ing.section : "Other", amounts: {}, loose: [] });
+      const nm = canonOf(ing.name);
+      const k = keyOf(nm);
+      if (!map.has(k)) map.set(k, { key: k, name: nm, section: SECTIONS.includes(ing.section) ? ing.section : "Other", amounts: {}, loose: [] });
       const e = map.get(k);
       if (typeof ing.qty === "number") {
         const [q, u] = norm(ing.qty, ing.unit);
@@ -816,9 +822,9 @@ function renderWeek() {
   const strip = el("div", { class: "strip", role: "group", "aria-label": "Days of the week" }, days.map((d) => {
     const has = picked.some((r) => plan.days[r.id] === d.key);
     const nt = !!(plan.notes[d.key] || "").trim();
-    return el("button", { class: "dbtn" + (has ? " has" : "") + (nt ? " noted" : "") + (d.key === today ? " today" : ""), "aria-pressed": d.key === selDay ? "true" : "false",
+    return el("button", { class: "dbtn" + (has ? " has" : "") + (nt ? " noted" : "") + (d.out && !has ? " out" : "") + (d.key === today ? " today" : ""), "aria-pressed": d.key === selDay ? "true" : "false",
       "aria-label": d.long + (has ? ", dinner planned" : ""), onclick: () => { selDay = d.key; renderWeek(); } },
-      el("span", { class: "dn" }, d.short), el("span", { class: "dd" }, d.num), el("span", { class: "mks" }, el("span", { class: "mk" }), el("span", { class: "nk" })));
+      el("span", { class: "dn" }, d.short), el("span", { class: "dd" }, d.num), el("span", { class: "mks" }, el("span", { class: "mk" }), el("span", { class: "nk" })), el("span", { class: "ot" }, "out"));
   }));
   const sel = days.find((d) => d.key === selDay);
   const note = el("textarea", { class: "note-in", rows: "2", maxlength: "200", disabled: readOnly, placeholder: "Add a reminder, e.g. Anatole's afterwork", "aria-label": "Note for " + sel.long });
@@ -841,8 +847,8 @@ function renderWeek() {
     meals.length ? meals.map((r) => el("div", { class: "meal" },
       el("button", { class: "row-main", onclick: () => openRecipe(r) }, doodleFor(r, "sm"), el("span", { class: "row-title" }, r.title)),
       el("button", { class: "icon-btn", disabled: readOnly, "aria-label": "Take " + r.title + " off this day", onclick: () => setDay(r.id, "") }, icon("close"))))
-      : el("p", { class: "sub" }, "No dinner planned yet."),
-    unplanned.length ? [el("p", { class: "label" }, "Cook this day"),
+      : el("p", { class: "sub" }, sel.out ? "Night out. Want to cook anyway? Pick a recipe below." : "No dinner planned yet."),
+    unplanned.length ? [el("p", { class: "label" }, sel.out && !meals.length ? "Or cook" : "Cook this day"),
       el("div", { class: "chips" }, unplanned.map((r) => el("button", { class: "chip", disabled: readOnly, onclick: () => setDay(r.id, selDay) }, "+ " + r.title)))]
       : (meals.length ? null : el("p", { class: "sub" }, "All your picks have a day.")),
     el("label", { class: "note-box" }, el("span", { class: "label" }, "Note"), note));
