@@ -838,7 +838,7 @@ function renderWeek() {
       el("span", { class: "dn" }, d.short), el("span", { class: "dd" }, d.num), el("span", { class: "mks" }, el("span", { class: "mk" }), el("span", { class: "nk" })), el("span", { class: "ot" }, "out"));
   }));
   const sel = days.find((d) => d.key === selDay);
-  const note = el("textarea", { class: "note-in", rows: "2", maxlength: "200", disabled: readOnly, placeholder: "Add a reminder, e.g. Anatole's afterwork", "aria-label": "Note for " + sel.long });
+  const note = el("textarea", { class: "note-in", rows: "2", maxlength: "200", disabled: readOnly, placeholder: "Add a reminder", "aria-label": "Note for " + sel.long });
   note.value = plan.notes[selDay] || "";
   let noteTimer;
   const saveNote = () => {
