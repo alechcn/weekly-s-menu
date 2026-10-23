@@ -266,6 +266,7 @@ h2 b { font-weight: 700; }
 .home { width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; display: grid; place-items: center; cursor: pointer; color: var(--muted); }
 .home:hover { color: var(--ink); background: rgba(23, 22, 20, .06); }
 .home[disabled] { opacity: .3; cursor: not-allowed; }
+.in-cart .li-name { text-decoration: line-through; opacity: .5; }
 .at-home .li { border-color: rgba(23, 22, 20, .12); }
 .at-home .li-name, .at-home .li-qty { opacity: .65; }
 .at-home .lead { width: 44px; display: grid; place-items: center; color: var(--ink); }
@@ -398,7 +399,7 @@ let localJobs = [];
 const IMPORT_TASK = "trig_019un3wPHSdRjgJG35q8eqFd";
 let view = "catalog";
 let selDay = null;
-const folds = { staples: false, home: false };
+const folds = { staples: false, home: false, cart: false };
 
 const $ = (s) => document.querySelector(s);
 // replaceChildren, skipping empty slots (it would print them as "null")
@@ -893,7 +894,7 @@ function renderWeek() {
   const resetBox = el("div", { class: "confirm" });
   const restore = () => resetBox.replaceChildren(el("button", { class: "text-btn", disabled: readOnly, onclick: () => resetBox.replaceChildren(
     el("span", {}, "Clear picks, days, reminders and the grocery list?"),
-    el("button", { class: "pill", onclick: () => { plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [] }; savePlan(); render(); toast("New week started"); } }, "Clear"),
+    el("button", { class: "pill", onclick: () => { clearCart(); plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [] }; savePlan(); render(); toast("New week started"); } }, "Clear"),
     el("button", { class: "pill ghost", onclick: restore }, "Cancel")) }, "Start a new week"));
   restore();
   fill(v, head, waiting, cal, el("div", { class: "step-foot" }, nextStep("Next: groceries", "list")), resetBox);
@@ -935,9 +936,9 @@ function openDay(key) {
 
 // ---- shopping view
 function needRow(i) {
-  const on = !!plan.cart[i.key];
+  const on = carted(i.key);
   return el("div", { class: "li" + (on ? " done" : "") },
-    el("button", { class: "check" + (on ? " on" : ""), role: "checkbox", "aria-checked": on ? "true" : "false", "aria-label": "In the cart: " + i.name, disabled: readOnly, onclick: () => toggleFlag("cart", i.key) },
+    el("button", { class: "check" + (on ? " on" : ""), role: "checkbox", "aria-checked": on ? "true" : "false", "aria-label": "In the cart: " + i.name, disabled: readOnly, onclick: () => toggleCart(i.key) },
       el("span", { class: "box" }, icon("check"))),
     el("span", { class: "li-name" }, i.name),
     el("span", { class: "li-qty" }, i.qty),
@@ -978,6 +979,30 @@ function extraItems() {
 function byCat(items) {
   return CATS.map((c) => [c, items.filter((i) => catOf(i) === c).sort((a, b) => a.name.localeCompare(b.name))]).filter(([, l]) => l.length);
 }
+// Live cart: one tiny document per item in the cart, so two phones ticking at once never overwrite each other.
+let cartMap = new Map(); // item key -> cart doc id
+const carted = (k) => cartMap.has(k) || !!plan.cart[k];
+function cartDocId(k) {
+  let h = 5381; for (const c of k) h = ((h * 33) ^ c.codePointAt(0)) >>> 0;
+  return "c-" + k.normalize("NFD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) + "-" + h.toString(36);
+}
+async function toggleCart(k) {
+  if (readOnly) return;
+  if (!dbRef) { toggleFlag("cart", k); return; }
+  const on = carted(k);
+  const id = cartMap.get(k) || cartDocId(k);
+  if (on) { cartMap.delete(k); if (plan.cart[k]) { delete plan.cart[k]; savePlan(); } } else cartMap.set(k, id);
+  render();
+  try {
+    const ref = dbRef.collection("cart").doc(id);
+    if (on) await ref.delete(); else await ref.set({ key: k, at: Date.now() });
+  } catch { toast("Couldn't sync that tick. Check your connection."); }
+}
+function clearCart() {
+  if (!dbRef) return;
+  for (const id of new Set(cartMap.values())) dbRef.collection("cart").doc(id).delete().catch(() => {});
+  cartMap = new Map();
+}
 function addExtra(name) {
   name = name.trim().replace(/\s+/g, " ");
   if (!name || readOnly) return false;
@@ -991,12 +1016,13 @@ function removeExtra(id) {
   if (readOnly) return;
   plan.extras = (plan.extras || []).filter((x) => x.id !== id);
   delete plan.cart["x:" + id];
+  if (cartMap.has("x:" + id) && dbRef) { dbRef.collection("cart").doc(cartMap.get("x:" + id)).delete().catch(() => {}); cartMap.delete("x:" + id); }
   render(); savePlan();
 }
 function extraRow(i) {
-  const on = !!plan.cart[i.key];
+  const on = carted(i.key);
   return el("div", { class: "li" + (on ? " done" : "") },
-    el("button", { class: "check" + (on ? " on" : ""), role: "checkbox", "aria-checked": on ? "true" : "false", "aria-label": "In the cart: " + i.name, disabled: readOnly, onclick: () => toggleFlag("cart", i.key) },
+    el("button", { class: "check" + (on ? " on" : ""), role: "checkbox", "aria-checked": on ? "true" : "false", "aria-label": "In the cart: " + i.name, disabled: readOnly, onclick: () => toggleCart(i.key) },
       el("span", { class: "box" }, icon("check"))),
     el("span", { class: "li-name" }, i.name, el("small", { class: "xtag" }, "Added")),
     el("span", { class: "li-qty" }, ""),
@@ -1021,7 +1047,10 @@ function renderList() {
   const main = need.filter((i) => !pantryCheck(i));
   const staples = need.filter(pantryCheck).sort((a, b) => a.name.localeCompare(b.name));
   const home = all.filter((i) => plan.have[i.key]).sort((a, b) => a.name.localeCompare(b.name));
-  const inCart = need.filter((i) => plan.cart[i.key]).length;
+  const inCart = need.filter((i) => carted(i.key)).length;
+  const done = need.filter((i) => carted(i.key)).sort((a, b) => a.name.localeCompare(b.name));
+  const prev = $("#v-list .extra-add input");
+  if (prev && prev.value) { input.value = prev.value; if (document.activeElement === prev) setTimeout(() => { const n = $("#v-list .extra-add input"); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }); }
   const pct = need.length ? Math.round((inCart / need.length) * 100) : 100;
   fill(v, head,
     el("div", { class: "summary" },
@@ -1030,12 +1059,13 @@ function renderList() {
       el("div", { class: "bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-label": "Shopping progress" }, el("i", { style: "width:" + pct + "%" })),
       doodle("bowl")),
     addBox,
-    ...byCat(main).map(([c, list]) => el("div", { class: "group" }, el("h4", {}, c), list.map((i) => (i.extra ? extraRow(i) : needRow(i))))),
-    staples.length ? fold("staples", "", "Check the pantry", staples.length + " spices & sauces", staples.map(needRow)) : null,
+    ...byCat(main.filter((i) => !carted(i.key))).map(([c, list]) => el("div", { class: "group" }, el("h4", {}, c), list.map((i) => (i.extra ? extraRow(i) : needRow(i))))),
+    staples.some((i) => !carted(i.key)) ? fold("staples", "", "Check the pantry", staples.filter((i) => !carted(i.key)).length + " spices & sauces", staples.filter((i) => !carted(i.key)).map(needRow)) : null,
+    done.length ? fold("cart", "in-cart", "In the cart", done.length, done.map((i) => (i.extra ? extraRow(i) : needRow(i)))) : null,
     home.length ? fold("home", "at-home", "Already at home", home.length, home.map(homeRow)) : null);
 }
 async function copyList() {
-  const left = shoppingItems().filter((i) => !plan.cart[i.key]);
+  const left = shoppingItems().filter((i) => !carted(i.key));
   const text = byCat(left.filter((i) => !pantryCheck(i))).concat([["Check the pantry", left.filter(pantryCheck)]]).filter(([, l]) => l.length)
     .map(([s, l]) => s.toUpperCase() + "\n" + l.map((i) => "- " + i.name + (i.qty ? " (" + i.qty + ")" : "")).join("\n")).join("\n\n");
   try { await navigator.clipboard.writeText(text || "Nothing to buy"); toast("Grocery list copied"); }
@@ -1045,7 +1075,7 @@ async function copyList() {
 function render() {
   $("#bCatalog").textContent = "";
   $("#bWeek").textContent = plan.picked.length ? plan.picked.length + "/" + MAX : "";
-  const left = shoppingItems().filter((i) => !plan.cart[i.key]).length;
+  const left = shoppingItems().filter((i) => !carted(i.key)).length;
   $("#bList").textContent = left ? String(left) : "";
   renderCatalog();
   renderWeek();
@@ -1340,6 +1370,10 @@ render();
   }, () => {});
   db.collection("inbox").onSnapshot((snap) => {
     inbox = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.addedAt || "").localeCompare(b.addedAt || ""));
+    render();
+  }, () => {});
+  db.collection("cart").onSnapshot((snap) => {
+    cartMap = new Map(snap.docs.map((d) => [d.data().key, d.id]).filter(([k]) => typeof k === "string"));
     render();
   }, () => {});
   planRef = db.doc("plan/current");
