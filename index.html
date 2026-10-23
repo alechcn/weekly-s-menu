@@ -82,6 +82,24 @@ main { padding-block: 4px calc(var(--tabbar) + 32px + env(safe-area-inset-bottom
 .adbtn.taken { opacity: .45; }
 .adbtn[aria-checked="true"] { background: var(--ink); color: var(--lime); box-shadow: none; opacity: 1; }
 .acard.dated { box-shadow: inset 0 0 0 2px var(--lime); }
+.cal { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cday { background: var(--card); border: 0; border-radius: 20px; padding: 12px; min-height: 128px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; text-align: left; font: inherit; color: var(--ink); cursor: pointer; }
+.cday:first-child { grid-column: 1 / -1; min-height: 0; }
+.cday-h { display: flex; align-items: baseline; gap: 6px; }
+.cdn { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--olive); }
+.cdd { font-size: 22px; font-weight: 300; line-height: 1; }
+.cday.today { box-shadow: inset 0 0 0 2px var(--ink); }
+.cday.has { background: var(--lime); }
+.cday.out:not(.has) { background: rgba(247, 240, 230, .55); }
+.cmeal { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; line-height: 1.25; }
+.cmeal .doodle-wrap, .cmeal > span:first-child { flex: none; }
+.cempty { font-size: 14px; color: var(--muted); }
+.cday.out .cempty { font-style: italic; }
+.cnote { font-size: 13px; line-height: 1.3; background: var(--lavender); border-radius: 10px; padding: 6px 8px; overflow-wrap: anywhere; }
+.waiting { background: var(--card); border-radius: var(--r); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.waiting .label, .waiting .sub { margin: 0; }
+.wchip { font-size: 13px; font-weight: 500; padding: 6px 12px; border-radius: 99px; background: var(--ink); color: var(--card); }
+.plan-opt.none { min-height: 48px; padding-left: 16px; }
 .note-box { display: flex; flex-direction: column; gap: 6px; }
 .note-in { font: 400 15px/1.35 var(--sans); width: 100%; padding: 10px 14px; border: 0; border-radius: 14px; background: rgba(23, 22, 20, .05); color: var(--ink); resize: none; }
 .note-in:focus { outline: 1.5px solid var(--ink); }
@@ -820,72 +838,73 @@ function renderWeek() {
   const v = $("#v-week");
   const days = weekDays();
   const today = ymd(new Date());
-  if (!selDay || !days.some((d) => d.key === selDay)) selDay = (days.find((d) => d.key === today) || days[0]).key;
   const picked = pickedRecipes();
   const head = stepHead(2, "This week");
   if (!picked.length) {
     v.replaceChildren(head, el("div", { class: "empty" }, doodle("bowl", "lg"),
       el("h3", {}, "No recipes chosen yet"),
-      el("p", {}, "Start in Recipes: choose up to five for the week, then give each one a day here."),
+      el("p", {}, "Start in Recipes: choose up to five for the week, then place each one on a day here."),
       el("button", { class: "pill", onclick: () => show("catalog") }, "Go to Recipes", icon("arrow"))));
     return;
   }
-  const strip = el("div", { class: "strip", role: "group", "aria-label": "Days of the week" }, days.map((d) => {
-    const has = picked.some((r) => plan.days[r.id] === d.key);
-    const nt = !!(plan.notes[d.key] || "").trim();
-    return el("button", { class: "dbtn" + (has ? " has" : "") + (nt ? " noted" : "") + (d.out && !has ? " out" : "") + (d.key === today ? " today" : ""), "aria-pressed": d.key === selDay ? "true" : "false",
-      "aria-label": d.long + (has ? ", dinner planned" : ""), onclick: () => { selDay = d.key; renderWeek(); } },
-      el("span", { class: "dn" }, d.short), el("span", { class: "dd" }, d.num), el("span", { class: "mks" }, el("span", { class: "mk" }), el("span", { class: "nk" })), el("span", { class: "ot" }, "out"));
+  // The calendar: one box per day with its dinner and reminder. Tap a box to fill it.
+  const cal = el("div", { class: "cal" }, days.map((d) => {
+    const meals = picked.filter((r) => plan.days[r.id] === d.key);
+    const note = (plan.notes[d.key] || "").trim();
+    return el("button", { class: "cday" + (d.out ? " out" : "") + (meals.length ? " has" : "") + (d.key === today ? " today" : ""),
+      disabled: readOnly, "aria-label": d.long + (meals.length ? ": " + meals.map((r) => r.title).join(", ") : d.out ? ": night out" : ": nothing planned") + (note ? ". Reminder: " + note : ""),
+      onclick: () => openDay(d.key) },
+      el("span", { class: "cday-h" }, el("span", { class: "cdn" }, d.short), el("span", { class: "cdd" }, d.num)),
+      meals.length ? meals.map((r) => el("span", { class: "cmeal" }, doodleFor(r, "sm"), el("span", {}, r.title)))
+        : el("span", { class: "cempty" }, d.out ? "Night out" : "+ Add dinner"),
+      note ? el("span", { class: "cnote" }, note) : null);
   }));
-  const sel = days.find((d) => d.key === selDay);
-  const note = el("textarea", { class: "note-in", rows: "2", maxlength: "200", disabled: readOnly, placeholder: "Add a reminder", "aria-label": "Note for " + sel.long });
-  note.value = plan.notes[selDay] || "";
-  let noteTimer;
-  const saveNote = () => {
-    clearTimeout(noteTimer);
-    const t = note.value.trim();
-    if ((plan.notes[selDay] || "") === t) return;
-    if (t) plan.notes[selDay] = t; else delete plan.notes[selDay];
-    savePlan();
-    const b = strip.querySelector('[aria-pressed="true"]'); if (b) b.classList.toggle("noted", !!t);
-  };
-  note.addEventListener("input", () => { clearTimeout(noteTimer); noteTimer = setTimeout(saveNote, 700); });
-  note.addEventListener("blur", saveNote);
-  const meals = picked.filter((r) => plan.days[r.id] === selDay);
-  const panel = el("div", { class: "panel" },
-    el("h3", {}, sel.long),
-    meals.length ? meals.map((r) => el("div", { class: "meal" },
-      el("button", { class: "row-main", onclick: () => openRecipe(r) }, doodleFor(r, "sm"), el("span", { class: "row-title" }, r.title)),
-      el("button", { class: "icon-btn", disabled: readOnly, "aria-label": "Take " + r.title + " off this day", onclick: () => setDay(r.id, "") }, icon("close"))))
-      : el("p", { class: "sub" }, sel.out ? "Night out." : "No dinner planned yet."),
-    el("label", { class: "note-box" }, el("span", { class: "label" }, "Note"), note));
-  // Recipe first: each chosen recipe gets a row of day buttons.
-  const assign = el("div", { class: "assign" }, picked.map((r) => {
-    const cur = plan.days[r.id];
-    return el("div", { class: "acard" + (days.some((d) => d.key === cur) ? " dated" : "") },
-      el("div", { class: "acard-top" },
-        el("button", { class: "row-main", onclick: () => openRecipe(r) }, doodleFor(r, "sm"), el("span", { class: "row-title" }, r.title)),
-        el("button", { class: "icon-btn", disabled: readOnly, "aria-label": "Remove from this week: " + r.title, onclick: () => togglePick(r.id) }, icon("close"))),
-      el("div", { class: "aday", role: "radiogroup", "aria-label": "Day to cook " + r.title }, days.map((d) => {
-        const on = cur === d.key;
-        const taken = !on && picked.some((o) => o.id !== r.id && plan.days[o.id] === d.key);
-        return el("button", { class: "adbtn" + (d.out ? " out" : "") + (taken ? " taken" : ""), role: "radio", "aria-checked": on ? "true" : "false", disabled: readOnly,
-          "aria-label": d.long + (taken ? ", another dinner that day" : ""),
-          onclick: () => { selDay = d.key; setDay(r.id, on ? "" : d.key); } },
-          el("span", {}, d.short.slice(0, 2)), el("b", {}, d.num));
-      })));
-  }));
+  const undated = picked.filter((r) => !days.some((d) => d.key === plan.days[r.id]));
+  const waiting = undated.length ? el("div", { class: "waiting" },
+    el("p", { class: "label" }, undated.length + (undated.length > 1 ? " recipes" : " recipe") + " without a day"),
+    el("div", { class: "chips" }, undated.map((r) => el("span", { class: "wchip" }, r.title))),
+    el("p", { class: "sub" }, "Tap a day in the calendar to place one.")) : null;
   const resetBox = el("div", { class: "confirm" });
   const restore = () => resetBox.replaceChildren(el("button", { class: "text-btn", disabled: readOnly, onclick: () => resetBox.replaceChildren(
-    el("span", {}, "Clear picks, days, notes and the grocery list?"),
+    el("span", {}, "Clear picks, days, reminders and the grocery list?"),
     el("button", { class: "pill", onclick: () => { plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [] }; savePlan(); render(); toast("New week started"); } }, "Clear"),
     el("button", { class: "pill ghost", onclick: restore }, "Cancel")) }, "Start a new week"));
   restore();
-  const undated = picked.filter((r) => !days.some((d) => d.key === plan.days[r.id])).length;
-  v.replaceChildren(head, el("p", { class: "label on-bg" }, "When are you cooking each one?"), assign,
-    el("p", { class: "label on-bg" }, "Your week"), strip, panel,
-    el("div", { class: "step-foot" }, undated ? el("p", { class: "sub on-bg" }, undated + (undated > 1 ? " recipes still need" : " recipe still needs") + " a day.") : null,
-      nextStep("Next: groceries", "list")), resetBox);
+  v.replaceChildren(head, waiting, cal, el("div", { class: "step-foot" }, nextStep("Next: groceries", "list")), resetBox);
+}
+// One day: choose its dinner and write its reminder, saved together.
+function openDay(key) {
+  const days = weekDays();
+  const d = days.find((x) => x.key === key);
+  const picked = pickedRecipes();
+  let choice = (picked.find((r) => plan.days[r.id] === key) || {}).id || "";
+  const note = el("textarea", { class: "note-in", rows: "3", maxlength: "200", placeholder: "Add a reminder", "aria-label": "Reminder for " + d.long });
+  note.value = plan.notes[key] || "";
+  const list = el("div", { class: "plan-list", role: "radiogroup", "aria-label": "Dinner" });
+  const draw = () => fill(list, [...picked.map((r) => {
+    const other = days.find((x) => x.key === plan.days[r.id] && x.key !== key);
+    return el("button", { class: "plan-opt", role: "radio", "aria-checked": choice === r.id ? "true" : "false", onclick: () => { choice = r.id; draw(); } },
+      doodleFor(r, "sm"),
+      el("span", { class: "row-text" }, el("span", { class: "row-title" }, r.title),
+        el("span", { class: "row-meta" }, other ? "Now on " + other.short + " " + other.num + ", will move here" : plan.days[r.id] === key ? "On this day" : "No day yet")),
+      el("span", { class: "radio" }, choice === r.id ? icon("check") : null));
+  }), el("button", { class: "plan-opt none", role: "radio", "aria-checked": choice === "" ? "true" : "false", onclick: () => { choice = ""; draw(); } },
+    el("span", { class: "row-text" }, el("span", { class: "row-title" }, d.out ? "Night out" : "No dinner")),
+    el("span", { class: "radio" }, choice === "" ? icon("check") : null))]);
+  const save = el("button", { class: "pill", type: "button", onclick: () => {
+    if (readOnly) return;
+    picked.forEach((r) => { if (plan.days[r.id] === key && r.id !== choice) delete plan.days[r.id]; });
+    if (choice) plan.days[choice] = key;
+    const t = note.value.trim();
+    if (t) plan.notes[key] = t; else delete plan.notes[key];
+    render(); savePlan();
+    $("#dlg").close();
+  } }, "Save " + d.short + " " + d.num, icon("check"));
+  sheet(el("h3", { id: "dlgTitle" }, d.long),
+    el("div", { class: "plan-step" }, el("h4", {}, "Dinner"), list),
+    el("div", { class: "plan-step" }, el("h4", {}, "Reminder"), note),
+    el("div", { class: "plan-save" }, save));
+  draw();
 }
 
 // ---- shopping view
