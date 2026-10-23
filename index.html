@@ -62,6 +62,7 @@ svg.doodle .fill { fill: var(--ink); stroke: none; }
 
 main { padding-block: 4px calc(var(--tabbar) + 32px + env(safe-area-inset-bottom, 0px)); }
 .view { display: flex; flex-direction: column; gap: 14px; }
+.view[hidden] { display: none !important; }
 .view-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-top: 4px; }
 .step-title { display: flex; flex-direction: column; gap: 2px; }
 .step-title h2 { font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
@@ -860,7 +861,7 @@ function renderWeek() {
     el("button", { class: "pill ghost", onclick: restore }, "Cancel")) }, "Start a new week"));
   restore();
   const undated = picked.filter((r) => !days.some((d) => d.key === plan.days[r.id])).length;
-  v.replaceChildren(head, strip, panel, el("p", { class: "label" }, "Your recipes · " + picked.length + " of " + MAX), list,
+  v.replaceChildren(head, strip, panel,
     el("div", { class: "step-foot" }, undated ? el("p", { class: "sub on-bg" }, undated + (undated > 1 ? " recipes still need" : " recipe still needs") + " a day.") : null,
       nextStep("Next: groceries", "list")), resetBox);
 }
