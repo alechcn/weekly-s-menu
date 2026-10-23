@@ -878,7 +878,7 @@ function openDay(key) {
   const d = days.find((x) => x.key === key);
   const picked = pickedRecipes();
   let choice = (picked.find((r) => plan.days[r.id] === key) || {}).id || "";
-  const note = el("textarea", { class: "note-in", rows: "3", maxlength: "200", placeholder: "Add a reminder", "aria-label": "Reminder for " + d.long });
+  const note = el("textarea", { class: "note-in", rows: "3", maxlength: "200", placeholder: "Little reminders", "aria-label": "Reminder for " + d.long });
   note.value = plan.notes[key] || "";
   const list = el("div", { class: "plan-list", role: "radiogroup", "aria-label": "Dinner" });
   const draw = () => fill(list, [...picked.map((r) => {
@@ -902,7 +902,7 @@ function openDay(key) {
   } }, "Save " + d.short + " " + d.num, icon("check"));
   sheet(el("h3", { id: "dlgTitle" }, d.long),
     el("div", { class: "plan-step" }, el("h4", {}, "Dinner"), list),
-    el("div", { class: "plan-step" }, el("h4", {}, "Reminder"), note),
+    el("div", { class: "plan-step" }, el("h4", {}, "Little reminders"), note),
     el("div", { class: "plan-save" }, save));
   draw();
 }
