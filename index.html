@@ -260,6 +260,7 @@ h2 b { font-weight: 700; }
 .check .box svg { width: 16px; height: 16px; }
 .check.on .box { background: var(--olive); box-shadow: none; color: var(--card); }
 .check[disabled] { cursor: not-allowed; }
+.li.no-end { grid-template-columns: 44px minmax(0, 1fr) auto; padding-right: 8px; }
 .li-name { font-size: 16px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
 .li-qty { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 .li.done .li-name, .li.done .li-qty { text-decoration: line-through; opacity: .45; }
@@ -937,12 +938,11 @@ function openDay(key) {
 // ---- shopping view
 function needRow(i) {
   const on = carted(i.key);
-  return el("div", { class: "li" + (on ? " done" : "") },
+  return el("div", { class: "li no-end" + (on ? " done" : "") },
     el("button", { class: "check" + (on ? " on" : ""), role: "checkbox", "aria-checked": on ? "true" : "false", "aria-label": "In the cart: " + i.name, disabled: readOnly, onclick: () => toggleCart(i.key) },
       el("span", { class: "box" }, icon("check"))),
     el("span", { class: "li-name" }, i.name),
-    el("span", { class: "li-qty" }, i.qty),
-    el("button", { class: "home", "aria-label": "Already at home: " + i.name, title: "Already at home", disabled: readOnly, onclick: () => toggleFlag("have", i.key) }, icon("house")));
+    el("span", { class: "li-qty" }, i.qty));
 }
 function homeRow(i) {
   return el("div", { class: "li" },
@@ -1008,8 +1008,11 @@ function addExtra(name) {
   if (!name || readOnly) return false;
   const nm = name.charAt(0).toUpperCase() + name.slice(1);
   if ((plan.extras || []).some((x) => keyOf(x.name) === keyOf(nm))) { toast(nm + " is already on the list"); return false; }
-  plan.extras = [...(plan.extras || []), { id: Date.now().toString(36), name: nm }];
+  const id = Date.now().toString(36);
+  plan.extras = [...(plan.extras || []), { id, name: nm }];
   render(); savePlan();
+  const it = extraItems().find((x) => x.id === id);
+  toast(nm + " added to " + (it ? catOf(it) : "Other"));
   return true;
 }
 function removeExtra(id) {
@@ -1034,7 +1037,7 @@ function renderList() {
   const head = stepHead(3, "Groceries",
     all.length ? el("button", { class: "pill ghost", onclick: copyList }, icon("copy"), "Copy") : null);
   const input = el("input", { class: "have-input", type: "text", placeholder: "Add something else…", autocomplete: "off", enterkeyhint: "done", disabled: readOnly, "aria-label": "Add an item to the groceries" });
-  const addBox = el("form", { class: "extra-add", onsubmit: (e) => { e.preventDefault(); if (addExtra(input.value)) { input.value = ""; setTimeout(() => { const n = $("#v-list .extra-add input"); if (n) n.focus(); }); } } },
+  const addBox = el("form", { class: "extra-add", onsubmit: (e) => { e.preventDefault(); const val = input.value; input.value = ""; if (!addExtra(val)) input.value = val; else { setTimeout(() => { const n = $("#v-list .extra-add input"); if (n) { n.value = ""; n.focus(); } }); } } },
     input, el("button", { class: "pill", type: "submit", disabled: readOnly, "aria-label": "Add" }, icon("plus")));
   if (!all.length) {
     v.replaceChildren(head, addBox, el("div", { class: "empty" }, doodle("pot", "lg"),
@@ -1055,7 +1058,7 @@ function renderList() {
   fill(v, head,
     el("div", { class: "summary" },
       el("strong", {}, need.length - inCart ? (need.length - inCart) + " left to buy" : "All done"),
-      el("small", {}, inCart + " of " + need.length + " in the cart · tap the house if you already have it"),
+      el("small", {}, inCart + " of " + need.length + " in the cart"),
       el("div", { class: "bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-label": "Shopping progress" }, el("i", { style: "width:" + pct + "%" })),
       doodle("bowl")),
     addBox,
