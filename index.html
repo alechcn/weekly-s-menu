@@ -1333,14 +1333,30 @@ function shotForm() {
       el("button", { type: "submit", class: "pill" }, "Read recipe", icon("arrow"))));
   return { form, focus: () => {} };
 }
+const CLAUDE_PAGE = "https://claude.ai/artifact/CXCt3CtzPEsWkmVrdg6Pns";
+function handoffForm(mode) {
+  const url = el("input", { type: "url", inputmode: "url", placeholder: "https://…", autocomplete: "off", "aria-label": "Recipe link" });
+  const go = async () => {
+    const v = url.value.trim();
+    if (v) { try { await navigator.clipboard.writeText(v); toast("Link copied. Paste it in Add → Link."); } catch {} }
+    window.open(CLAUDE_PAGE, "_blank", "noopener");
+  };
+  const form = el("div", { class: "sheet", style: "padding: 0" },
+    el("p", { class: "row-meta" }, mode === "link"
+      ? "Reading a recipe from a link happens on the Claude version of Weekly Menu. Paste the link here, tap the button, then paste it in Add → Link there."
+      : "Reading screenshots happens on the Claude version of Weekly Menu. Tap the button, then choose Add → Screenshot there."),
+    mode === "link" ? el("label", { class: "field" }, "Recipe link", url) : null,
+    el("button", { class: "pill", type: "button", onclick: go }, mode === "link" ? "Copy link & open Claude" : "Open Claude to add screenshots", icon("arrow")));
+  return { form, focus: () => (mode === "link" ? url.focus() : null) };
+}
 function openAddForm(mode) {
   if (mode !== "memory" && mode !== "shot") mode = "link";
-  if (window.STANDALONE) mode = "memory";
-  const parts = mode === "link" ? linkForm() : mode === "shot" ? shotForm() : memoryForm();
+  // Link and Screenshot always stay in this menu. On the GitHub copy (no Claude there) they hand off to the Claude page.
+  const parts = window.STANDALONE && mode !== "memory" ? handoffForm(mode) : mode === "link" ? linkForm() : mode === "shot" ? shotForm() : memoryForm();
   sheet(el("div", { class: "sheet-hero" }, doodle("plate", "lg"),
       el("div", {}, el("h3", { id: "dlgTitle" }, "Add a recipe"),
         el("span", { class: "row-meta" }, mode === "link" ? "Paste a link and we do the rest." : mode === "shot" ? "Screenshots from an app, a card or a book." : "One you know by heart. Ingredients only."))),
-    window.STANDALONE ? null : el("div", { class: "seg", role: "tablist", "aria-label": "How to add" }, [["link", "Link"], ["shot", "Screenshot"], ["memory", "From memory"]].map(([m, label]) =>
+    el("div", { class: "seg", role: "tablist", "aria-label": "How to add" }, [["link", "Link"], ["shot", "Screenshot"], ["memory", "From memory"]].map(([m, label]) =>
       el("button", { type: "button", role: "tab", "aria-selected": m === mode ? "true" : "false", onclick: () => openAddForm(m) }, label))),
     parts.form);
   parts.focus();
