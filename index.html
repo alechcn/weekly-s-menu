@@ -269,6 +269,9 @@ h2 b { font-weight: 700; }
 .li.no-end { grid-template-columns: 44px minmax(0, 1fr) auto; padding-right: 8px; }
 .li-name { font-size: 16px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
 .li-qty { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.qedit { border: 0; background: rgba(23, 22, 20, .05); border-radius: 10px; padding: 8px 10px; min-height: 36px; font: inherit; font-size: 14px; cursor: pointer; }
+.qedit.edited { background: var(--lime); color: var(--ink); }
+.qty-in { width: 96px; min-height: 36px; border: 1.5px solid var(--ink); border-radius: 10px; padding: 6px 8px; font: inherit; font-size: 16px; text-align: right; background: #fff; color: var(--ink); }
 .li.done .li-name, .li.done .li-qty { text-decoration: line-through; opacity: .45; }
 .home { width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; display: grid; place-items: center; cursor: pointer; color: var(--muted); }
 .home:hover { color: var(--ink); background: rgba(23, 22, 20, .06); }
@@ -397,7 +400,7 @@ window.STANDALONE = true;
 const SECTIONS = ["Produce", "Meat & fish", "Dairy & eggs", "Bakery", "Pantry", "Spices & sauces", "Frozen", "Other"];
 const MAX = 5;
 let recipes = [];
-let plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [], week: null };
+let plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [], week: null, qty: {} };
 let readOnly = false;
 let planRef = null;
 let dbRef = null;
@@ -919,7 +922,7 @@ function newWeekCard() {
       el("strong", {}, "Start the week of " + f(next) + "?"),
       el("small", {}, "This clears the recipes, days, reminders and the grocery list on both phones."),
       el("div", { class: "confirm" },
-        el("button", { class: "pill", onclick: () => { clearCart(); plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [], week: null }; savePlan(); render(); show("catalog"); toast("New week started. Choose your recipes"); } }, "Yes, start over"),
+        el("button", { class: "pill", onclick: () => { clearCart(); plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [], week: null, qty: {} }; savePlan(); render(); show("catalog"); toast("New week started. Choose your recipes"); } }, "Yes, start over"),
         el("button", { class: "pill ghost", onclick: restore }, "Cancel"))) }, "Start a new week", icon("arrow")));
   restore();
   return box;
@@ -979,7 +982,28 @@ function needRow(i) {
     el("button", { class: "check" + (on ? " on" : ""), role: "checkbox", "aria-checked": on ? "true" : "false", "aria-label": "In the cart: " + i.name, disabled: readOnly, onclick: () => toggleCart(i.key) },
       el("span", { class: "box" }, icon("check"))),
     el("span", { class: "li-name" }, i.name),
-    el("span", { class: "li-qty" }, i.qty));
+    qtyCell(i));
+}
+// Quantities in Groceries can be changed by hand (plan.qty, shared by both phones). Empty = back to the recipe amount.
+const withQty = (i) => (plan.qty && typeof plan.qty[i.key] === "string" ? { ...i, qty: plan.qty[i.key], edited: true } : i);
+function qtyCell(i) {
+  const btn = el("button", { class: "li-qty qedit" + (i.edited ? " edited" : ""), type: "button", disabled: readOnly, "aria-label": "Change quantity of " + i.name + (i.qty ? ", now " + i.qty : "") },
+    i.qty || "+ qty");
+  btn.onclick = () => {
+    const inp = el("input", { class: "qty-in", type: "text", value: i.qty || "", placeholder: "e.g. 500 g", maxlength: "24", enterkeyhint: "done", "aria-label": "Quantity of " + i.name });
+    let done = false;
+    const commit = () => {
+      if (done) return; done = true;
+      const v = inp.value.trim().replace(/\s+/g, " ");
+      plan.qty = plan.qty || {};
+      if (!v) delete plan.qty[i.key]; else plan.qty[i.key] = v;
+      render(); savePlan();
+    };
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } if (e.key === "Escape") { done = true; render(); } });
+    inp.addEventListener("blur", commit);
+    btn.replaceWith(inp); inp.focus(); inp.select();
+  };
+  return btn;
 }
 function homeRow(i) {
   return el("div", { class: "li" },
@@ -995,7 +1019,7 @@ function fold(key, cls, title, count, rows) {
   d.addEventListener("toggle", () => { folds[key] = d.open; });
   return d;
 }
-function shoppingItems() { return [...aggregate(), ...extraItems()].filter((i) => !plan.have[i.key]); }
+function shoppingItems() { return [...aggregate(), ...extraItems()].map(withQty).filter((i) => !plan.have[i.key]); }
 // Grocery categories (Ale's): protein, vegetables, carbs & grains, fats, then dairy and other.
 const CATS = ["Protein", "Vegetables & fruit", "Carbs & grains", "Fats", "Dairy", "Other"];
 function catOf(i) {
@@ -1065,12 +1089,12 @@ function extraRow(i) {
     el("button", { class: "check" + (on ? " on" : ""), role: "checkbox", "aria-checked": on ? "true" : "false", "aria-label": "In the cart: " + i.name, disabled: readOnly, onclick: () => toggleCart(i.key) },
       el("span", { class: "box" }, icon("check"))),
     el("span", { class: "li-name" }, i.name, el("small", { class: "xtag" }, "Added")),
-    el("span", { class: "li-qty" }, ""),
+    qtyCell(i),
     el("button", { class: "home", "aria-label": "Remove " + i.name, title: "Remove", disabled: readOnly, onclick: () => removeExtra(i.id) }, icon("close")));
 }
 function renderList() {
   const v = $("#v-list");
-  const all = [...aggregate(), ...extraItems()];
+  const all = [...aggregate(), ...extraItems()].map(withQty);
   const head = stepHead(3, "Groceries",
     all.length ? el("button", { class: "pill ghost", onclick: copyList }, icon("copy"), "Copy") : null);
   const input = el("input", { class: "have-input", type: "text", placeholder: "Add something else…", autocomplete: "off", enterkeyhint: "done", disabled: readOnly, "aria-label": "Add an item to the groceries" });
@@ -1439,7 +1463,8 @@ render();
     if (snap.metadata.hasPendingWrites) return;
     const d = snap.exists ? snap.data() : {};
     plan = { picked: [...(d.picked || [])], have: { ...(d.have || {}) }, cart: { ...(d.cart || {}) }, days: { ...(d.days || {}) },
-      notes: { ...(d.notes || {}) }, extras: Array.isArray(d.extras) ? d.extras.filter((x) => x && x.id && x.name) : [], week: typeof d.week === "string" ? d.week : null };
+      notes: { ...(d.notes || {}) }, extras: Array.isArray(d.extras) ? d.extras.filter((x) => x && x.id && x.name) : [], week: typeof d.week === "string" ? d.week : null,
+      qty: d.qty && typeof d.qty === "object" ? { ...d.qty } : {} };
     render();
   }, () => {});
 })();
