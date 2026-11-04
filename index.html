@@ -96,6 +96,11 @@ main { padding-block: 4px calc(var(--tabbar) + 32px + env(safe-area-inset-bottom
 .cempty { font-size: 14px; color: var(--muted); }
 .cday.out .cempty { font-style: italic; }
 .cnote { font-size: 13px; line-height: 1.3; background: var(--lavender); border-radius: 10px; padding: 6px 8px; overflow-wrap: anywhere; }
+.newweek { background: var(--card); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.newweek.due { background: var(--lime); }
+.newweek small { color: var(--muted, rgba(23, 22, 20, .65)); }
+.newweek > .pill { align-self: flex-start; }
+.newweek .confirm { justify-content: flex-start; }
 .waiting { background: var(--card); border-radius: var(--r); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 .waiting .label, .waiting .sub { margin: 0; }
 .wchip { font: 500 14px/1.2 var(--sans); min-height: 40px; padding: 8px 14px; border-radius: 99px; border: 0; background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink); color: var(--ink); cursor: pointer; text-align: left; }
@@ -392,7 +397,7 @@ window.STANDALONE = true;
 const SECTIONS = ["Produce", "Meat & fish", "Dairy & eggs", "Bakery", "Pantry", "Spices & sauces", "Frozen", "Other"];
 const MAX = 5;
 let recipes = [];
-let plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [] };
+let plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [], week: null };
 let readOnly = false;
 let planRef = null;
 let dbRef = null;
@@ -463,7 +468,14 @@ function isoWeekNum(d) {
   return Math.ceil(((t - y) / 864e5 + 1) / 7);
 }
 // The week being planned: this week on weekdays, next week from Saturday on.
+// The week the menu is for stays fixed (plan.week) until "Start a new week", so a menu chosen
+// on Saturday morning and shopped Saturday afternoon keeps its list as long as you want.
 function planMonday() {
+  if (plan && /^\d{4}-\d\d-\d\d$/.test(plan.week || "")) { const [y, m, d] = plan.week.split("-").map(Number); return new Date(y, m - 1, d, 12); }
+  return autoMonday();
+}
+const weekOver = () => !!plan.week && ymd(autoMonday()) > plan.week;
+function autoMonday() {
   const t = new Date(); t.setHours(12, 0, 0, 0);
   const dow = t.getDay();
   t.setDate(t.getDate() + (dow === 6 ? 2 : dow === 0 ? 1 : 1 - dow));
@@ -477,12 +489,12 @@ function weekDays() {
     return { key: ymd(d), out: i >= 4, short: d.toLocaleDateString("en-GB", { weekday: "short" }), num: d.getDate(), long: d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) };
   });
 }
-(() => {
+function weekLabel() {
   const mon = planMonday(), sun = new Date(mon); sun.setDate(mon.getDate() + 6);
   const f = (d) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const range = mon.getMonth() === sun.getMonth() ? mon.getDate() + "–" + f(sun) : f(mon) + " – " + f(sun);
   $("#weekLabel").textContent = "Week " + isoWeekNum(mon) + " · " + range;
-})();
+}
 
 function toast(msg) {
   const t = $("#toast");
@@ -638,6 +650,7 @@ const pickedRecipes = () => plan.picked.map((id) => recipes.find((r) => r.id ===
 let writing = Promise.resolve();
 function savePlan() {
   if (!planRef || readOnly) return;
+  if (!plan.week && (plan.picked.length || Object.keys(plan.days).length || (plan.extras || []).length)) plan.week = ymd(autoMonday());
   const body = JSON.parse(JSON.stringify(plan));
   writing = writing.then(() => planRef.set(body)).catch((e) => {
     if (e && e.code === "invalid_argument") { readOnly = true; render(); toast("You can view this menu but not change it."); }
@@ -893,13 +906,23 @@ function renderWeek() {
       onclick: () => { holding = holding === r.id ? null : r.id; renderWeek(); } }, r.title))),
     el("p", { class: "sub" }, holding ? "Now tap the day you'll cook it." : "Tap a recipe, then tap its day."),
     el("button", { class: "pill ghost", disabled: readOnly, onclick: autoFill }, "Fill the empty days for me")) : null;
-  const resetBox = el("div", { class: "confirm" });
-  const restore = () => resetBox.replaceChildren(el("button", { class: "text-btn", disabled: readOnly, onclick: () => resetBox.replaceChildren(
-    el("span", {}, "Clear picks, days, reminders and the grocery list?"),
-    el("button", { class: "pill", onclick: () => { clearCart(); plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [] }; savePlan(); render(); toast("New week started"); } }, "Clear"),
-    el("button", { class: "pill ghost", onclick: restore }, "Cancel")) }, "Start a new week"));
+  fill(v, head, weekOver() ? newWeekCard() : null, waiting, cal, el("div", { class: "step-foot" }, nextStep("Next: groceries", "list")));
+}
+// Start over: clears picks, days, reminders and groceries. Never happens on its own.
+function newWeekCard() {
+  const next = autoMonday(), f = (d) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const box = el("div", { class: "newweek" + (weekOver() ? " due" : "") });
+  const restore = () => box.replaceChildren(
+    el("strong", {}, weekOver() ? "This menu's week is over" : "Done with this week?"),
+    el("small", {}, "Your choices and grocery list stay saved until you start again."),
+    el("button", { class: "pill", disabled: readOnly, onclick: () => box.replaceChildren(
+      el("strong", {}, "Start the week of " + f(next) + "?"),
+      el("small", {}, "This clears the recipes, days, reminders and the grocery list on both phones."),
+      el("div", { class: "confirm" },
+        el("button", { class: "pill", onclick: () => { clearCart(); plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [], week: null }; savePlan(); render(); show("catalog"); toast("New week started. Choose your recipes"); } }, "Yes, start over"),
+        el("button", { class: "pill ghost", onclick: restore }, "Cancel"))) }, "Start a new week", icon("arrow")));
   restore();
-  fill(v, head, waiting, cal, el("div", { class: "step-foot" }, nextStep("Next: groceries", "list")), resetBox);
+  return box;
 }
 // One day: choose its dinner and write its reminder, saved together.
 function openDay(key) {
@@ -1079,7 +1102,8 @@ function renderList() {
     ...byCat(main.filter((i) => !carted(i.key))).map(([c, list]) => el("div", { class: "group" }, el("h4", {}, c), list.map((i) => (i.extra ? extraRow(i) : needRow(i))))),
     staples.some((i) => !carted(i.key)) ? fold("staples", "", "Check the pantry", staples.filter((i) => !carted(i.key)).length + " spices & sauces", staples.filter((i) => !carted(i.key)).map(needRow)) : null,
     done.length ? fold("cart", "in-cart", "In the cart", done.length, done.map((i) => (i.extra ? extraRow(i) : needRow(i)))) : null,
-    home.length ? fold("home", "at-home", "Already at home", home.length, home.map(homeRow)) : null);
+    home.length ? fold("home", "at-home", "Already at home", home.length, home.map(homeRow)) : null,
+    plan.picked.length || (plan.extras || []).length ? newWeekCard() : null);
 }
 async function copyList() {
   const left = shoppingItems().filter((i) => !carted(i.key));
@@ -1090,6 +1114,7 @@ async function copyList() {
 }
 
 function render() {
+  weekLabel();
   $("#bCatalog").textContent = "";
   $("#bWeek").textContent = plan.picked.length ? (plan.picked.length > MAX ? MAX + "+" + (plan.picked.length - MAX) : plan.picked.length + "/" + MAX) : "";
   const left = shoppingItems().filter((i) => !carted(i.key)).length;
@@ -1414,7 +1439,7 @@ render();
     if (snap.metadata.hasPendingWrites) return;
     const d = snap.exists ? snap.data() : {};
     plan = { picked: [...(d.picked || [])], have: { ...(d.have || {}) }, cart: { ...(d.cart || {}) }, days: { ...(d.days || {}) },
-      notes: { ...(d.notes || {}) }, extras: Array.isArray(d.extras) ? d.extras.filter((x) => x && x.id && x.name) : [] };
+      notes: { ...(d.notes || {}) }, extras: Array.isArray(d.extras) ? d.extras.filter((x) => x && x.id && x.name) : [], week: typeof d.week === "string" ? d.week : null };
     render();
   }, () => {});
 })();
