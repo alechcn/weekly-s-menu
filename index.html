@@ -104,6 +104,7 @@ main { padding-block: 4px calc(var(--tabbar) + 32px + env(safe-area-inset-bottom
 .cday.drop { box-shadow: inset 0 0 0 2px var(--ink); }
 .cday.drop .cempty { color: var(--ink); font-weight: 700; font-style: normal; }
 .plan-opt.none { min-height: 48px; padding-left: 16px; }
+.plan-opt.more { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(23, 22, 20, .25); }
 .note-box { display: flex; flex-direction: column; gap: 6px; }
 .note-in { font: 400 15px/1.35 var(--sans); width: 100%; padding: 10px 14px; border: 0; border-radius: 14px; background: rgba(23, 22, 20, .05); color: var(--ink); resize: none; }
 .note-in:focus { outline: 1.5px solid var(--ink); }
@@ -756,7 +757,7 @@ function nextStep(label, view, on = true) {
 function summaryCard() {
   const n = plan.picked.length;
   return el("div", { class: "summary" },
-    el("strong", {}, n === MAX ? "Your five are chosen" : n + " of " + MAX + " chosen"),
+    el("strong", {}, n > MAX ? "Your five + " + (n - MAX) + " extra" : n === MAX ? "Your five are chosen" : n + " of " + MAX + " chosen"),
     el("small", {}, n ? "Next, give each one a day." : "Tap + on the recipes you want to cook this week. Each makes 2 dinners and 2 lunchboxes."),
     el("div", { class: "dots" }, Array.from({ length: MAX }, (_, i) => el("span", { class: "dot" + (i < n ? " on" : "") }))),
     doodle("pot"));
@@ -909,6 +910,13 @@ function openDay(key) {
   const note = el("textarea", { class: "note-in", rows: "3", maxlength: "200", placeholder: "Little reminders", "aria-label": "Reminder for " + d.long });
   note.value = plan.notes[key] || "";
   const list = el("div", { class: "plan-list", role: "radiogroup", "aria-label": "Dinner" });
+  // Night-out days can take an extra recipe from the whole catalog (beyond the five).
+  let more = false;
+  const others = () => recipes.filter((r) => !plan.picked.includes(r.id)).sort((a, b) => a.title.localeCompare(b.title));
+  const extraOpt = (r) => el("button", { class: "plan-opt", role: "radio", "aria-checked": choice === r.id ? "true" : "false", onclick: () => { choice = r.id; more = false; draw(); } },
+    doodleFor(r, "sm"),
+    el("span", { class: "row-text" }, el("span", { class: "row-title" }, r.title), el("span", { class: "row-meta" }, "Extra recipe for this night")),
+    el("span", { class: "radio" }, choice === r.id ? icon("check") : null));
   const draw = () => fill(list, [...picked.map((r) => {
     const other = days.find((x) => x.key === plan.days[r.id] && x.key !== key);
     return el("button", { class: "plan-opt", role: "radio", "aria-checked": choice === r.id ? "true" : "false", onclick: () => { choice = r.id; draw(); } },
@@ -918,10 +926,16 @@ function openDay(key) {
       el("span", { class: "radio" }, choice === r.id ? icon("check") : null));
   }), el("button", { class: "plan-opt none", role: "radio", "aria-checked": choice === "" ? "true" : "false", onclick: () => { choice = ""; draw(); } },
     el("span", { class: "row-text" }, el("span", { class: "row-title" }, d.out ? "Night out" : "No dinner")),
-    el("span", { class: "radio" }, choice === "" ? icon("check") : null))]);
+    el("span", { class: "radio" }, choice === "" ? icon("check") : null)),
+    ...(d.out && choice && !picked.some((r) => r.id === choice) ? [extraOpt(recipes.find((r) => r.id === choice))] : []),
+    ...(d.out ? (more ? others().filter((r) => r.id !== choice).map(extraOpt)
+      : [el("button", { class: "plan-opt none more", type: "button", disabled: !others().length, onclick: () => { more = true; draw(); const f = list.children[picked.length + 1]; if (f) f.scrollIntoView({ block: "nearest", behavior: "smooth" }); } },
+        el("span", { class: "row-text" }, el("span", { class: "row-title" }, "+ Add another recipe"),
+          el("span", { class: "row-meta" }, others().length ? "From the catalog, on top of your five" : "Every recipe is already in this week")))]) : [])]);
   const save = el("button", { class: "pill", type: "button", onclick: () => {
     if (readOnly) return;
     picked.forEach((r) => { if (plan.days[r.id] === key && r.id !== choice) delete plan.days[r.id]; });
+    if (choice && !plan.picked.includes(choice)) plan.picked.push(choice);
     if (choice) plan.days[choice] = key;
     const t = note.value.trim();
     if (t) plan.notes[key] = t; else delete plan.notes[key];
@@ -1077,7 +1091,7 @@ async function copyList() {
 
 function render() {
   $("#bCatalog").textContent = "";
-  $("#bWeek").textContent = plan.picked.length ? plan.picked.length + "/" + MAX : "";
+  $("#bWeek").textContent = plan.picked.length ? (plan.picked.length > MAX ? MAX + "+" + (plan.picked.length - MAX) : plan.picked.length + "/" + MAX) : "";
   const left = shoppingItems().filter((i) => !carted(i.key)).length;
   $("#bList").textContent = left ? String(left) : "";
   renderCatalog();
