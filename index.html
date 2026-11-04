@@ -358,7 +358,7 @@ dialog::backdrop { background: rgba(35, 64, 63, .55); }
 
 <nav class="tabbar" aria-label="Views">
   <div class="wrap" role="tablist">
-    <button class="tab" role="tab" data-view="catalog" id="tab-catalog"><span class="ico" data-icon="book"></span>1 · Recipes<span class="badge" id="bCatalog"></span></button>
+    <button class="tab" role="tab" data-view="catalog" id="tab-catalog"><span class="ico" data-icon="book"></span>1 · Catalog<span class="badge" id="bCatalog"></span></button>
     <button class="tab" role="tab" data-view="week" id="tab-week"><span class="ico" data-icon="calendar"></span>2 · This week<span class="badge" id="bWeek"></span></button>
     <button class="tab" role="tab" data-view="list" id="tab-list"><span class="ico" data-icon="basket"></span>3 · Groceries<span class="badge" id="bList"></span></button>
   </div>
@@ -777,7 +777,7 @@ function summaryCard() {
 }
 function renderCatalog() {
   const v = $("#v-catalog");
-  const head = stepHead(1, "Recipes",
+  const head = stepHead(1, "Catalog",
     el("button", { class: "pill", id: "addBtn", disabled: readOnly, onclick: () => openAddForm("link") }, icon("plus"), "Add"));
   const pending = [...localJobs, ...inbox.filter((i) => i.status !== "done")].map(pendingRow);
   if (!recipes.length && !pending.length) {
@@ -882,8 +882,8 @@ function renderWeek() {
   if (!picked.length) {
     v.replaceChildren(head, el("div", { class: "empty" }, doodle("bowl", "lg"),
       el("h3", {}, "No recipes chosen yet"),
-      el("p", {}, "Start in Recipes: choose up to five for the week, then place each one on a day here."),
-      el("button", { class: "pill", onclick: () => show("catalog") }, "Go to Recipes", icon("arrow"))));
+      el("p", {}, "Start in the Catalog: choose up to five for the week, then place each one on a day here."),
+      el("button", { class: "pill", onclick: () => show("catalog") }, "Go to Catalog", icon("arrow"))));
     return;
   }
   // The calendar: one box per day with its dinner and reminder. Tap a box to fill it.
@@ -1080,7 +1080,7 @@ function renderList() {
     v.replaceChildren(head, addBox, el("div", { class: "empty" }, doodle("pot", "lg"),
       el("h3", {}, "Nothing to buy yet"),
       el("p", {}, "Choose recipes in step 1 and their ingredients show up here, sorted into protein, vegetables, carbs and fats. You can also add anything else above."),
-      el("button", { class: "pill", onclick: () => show("catalog") }, "Go to Recipes", icon("arrow"))));
+      el("button", { class: "pill", onclick: () => show("catalog") }, "Go to Catalog", icon("arrow"))));
     return;
   }
   const need = all.filter((i) => !plan.have[i.key]);
