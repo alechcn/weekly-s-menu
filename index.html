@@ -1226,7 +1226,8 @@ function openDay(key) {
   const note = el("textarea", { class: "note-in", rows: "3", maxlength: "200", placeholder: "Little reminders", "aria-label": "Reminder for " + d.long });
   note.value = plan.notes[key] || "";
   const list = el("div", { class: "plan-list", role: "radiogroup", "aria-label": "Dinner" });
-  // Night-out days can take an extra recipe from the whole catalog (beyond the five).
+  // Night-out days and empty days can take an extra recipe from the whole catalog (beyond the five).
+  const canExtra = d.out || !picked.some((r) => plan.days[r.id] === key);
   let more = false;
   const others = () => recipes.filter((r) => !plan.picked.includes(r.id)).sort((a, b) => a.title.localeCompare(b.title));
   const extraOpt = (r) => el("button", { class: "plan-opt", role: "radio", "aria-checked": choice === r.id ? "true" : "false", onclick: () => { choice = r.id; more = false; draw(); } },
@@ -1243,11 +1244,11 @@ function openDay(key) {
   }), el("button", { class: "plan-opt none", role: "radio", "aria-checked": choice === "" ? "true" : "false", onclick: () => { choice = ""; draw(); } },
     el("span", { class: "row-text" }, el("span", { class: "row-title" }, d.out ? "Night out" : "No dinner")),
     el("span", { class: "radio" }, choice === "" ? icon("check") : null)),
-    ...(d.out && choice && !picked.some((r) => r.id === choice) ? [extraOpt(recipes.find((r) => r.id === choice))] : []),
-    ...(d.out ? (more ? others().filter((r) => r.id !== choice).map(extraOpt)
+    ...(canExtra && choice && !picked.some((r) => r.id === choice) ? [extraOpt(recipes.find((r) => r.id === choice))] : []),
+    ...(canExtra ? (more ? others().filter((r) => r.id !== choice).map(extraOpt)
       : [el("button", { class: "plan-opt none more", type: "button", disabled: !others().length, onclick: () => { more = true; draw(); const f = list.children[picked.length + 1]; if (f) f.scrollIntoView({ block: "nearest", behavior: "smooth" }); } },
         el("span", { class: "row-text" }, el("span", { class: "row-title" }, "+ Add another recipe"),
-          el("span", { class: "row-meta" }, others().length ? "From the catalog, on top of your five" : "Every recipe is already in this week")))]) : [])]);
+          el("span", { class: "row-meta" }, others().length ? (d.out ? "From the catalog, on top of your five" : "Forgot one? Pick any recipe from the catalog") : "Every recipe is already in this week")))]) : [])]);
   const save = el("button", { class: "pill", type: "button", onclick: () => {
     if (readOnly) return;
     picked.forEach((r) => { if (plan.days[r.id] === key && r.id !== choice) delete plan.days[r.id]; });
