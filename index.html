@@ -181,6 +181,11 @@ h2 b { font-weight: 700; }
 .cook-ing .done .nm { opacity: .45; text-decoration: line-through; }
 .cook-ing small { display: block; font-size: 13px; color: var(--muted, rgba(23, 22, 20, .65)); }
 .cook-ing .q { font-size: 15px; font-variant-numeric: tabular-nums; }
+.wchip.dragsrc, .grip { touch-action: none; }
+.grip { display: grid; place-items: center; flex: none; width: 32px; height: 32px; margin-left: auto; border-radius: 8px; opacity: .7; cursor: grab; }
+.grip .ico svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.wchip .grip { width: 24px; height: 24px; margin-left: 2px; }
+.cmeal > span:nth-child(2) { flex: 1; min-width: 0; }
 .dragsrc { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .cmeal.dragsrc { cursor: grab; border-radius: 10px; }
 .dragging-src { opacity: .35; }
@@ -514,6 +519,7 @@ const el = (tag, attrs = {}, ...kids) => {
 const ICONS = {
   book: '<path d="M4 5c3-1.5 5.5-1.5 8 0v14c-2.5-1.5-5-1.5-8 0z"/><path d="M12 5c2.5-1.5 5-1.5 8 0v14c-3-1.5-5.5-1.5-8 0"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  grip: '<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
   chef: '<path d="M7 14a4 4 0 1 1 1.5-7.7A4 4 0 0 1 16 5a4 4 0 1 1 1 9"/><path d="M7 13v6h10v-6"/><path d="M7 16h10"/>',
   basket: '<path d="M3 9h18l-2 10a2 2 0 0 1-2 1.6H7A2 2 0 0 1 5 19z"/><path d="M8 9l4-6 4 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -1022,7 +1028,7 @@ function renderWeek() {
       disabled: readOnly, "aria-label": d.long + (meals.length ? ": " + meals.map((r) => r.title).join(", ") : d.out ? ": night out" : ": nothing planned") + (note ? ". Reminder: " + note : ""),
       onclick: () => { if (Date.now() - dragEndAt < 400) return; holding ? placeHeld(d.key) : openDay(d.key); } },
       el("span", { class: "cday-h" }, el("span", { class: "cdn" }, d.short), el("span", { class: "cdd" }, d.num)),
-      meals.length ? meals.map((r) => draggable(el("span", { class: "cmeal" }, doodleFor(r, "sm"), el("span", {}, r.title, byTag(plan.by[r.id]))), r.id, d.key))
+      meals.length ? meals.map((r) => draggable(el("span", { class: "cmeal" }, doodleFor(r, "sm"), el("span", {}, r.title, byTag(plan.by[r.id])), readOnly ? null : el("span", { class: "grip", "aria-hidden": "true" }, icon("grip"))), r.id, d.key))
         : el("span", { class: "cempty" }, holding ? "Place here" : d.out ? "Night out" : "+ Add dinner"),
       note ? el("span", { class: "cnote" }, note) : null);
   }));
@@ -1032,10 +1038,10 @@ function renderWeek() {
     el("p", { class: "label" }, undated.length + (undated.length > 1 ? " recipes" : " recipe") + " without a day"),
     el("div", { class: "chips" }, undated.map((r) => { const b = blockOf(r);
       return draggable(el("button", { class: "wchip", disabled: readOnly, "aria-pressed": holding === r.id ? "true" : "false", style: "--blk:" + b.bg + ";--blk-text:" + b.text,
-        onclick: () => { if (Date.now() - dragEndAt < 400) return; holding = holding === r.id ? null : r.id; renderWeek(); } }, doodleFor(r, "xs"), r.title), r.id, ""); })),
-    el("p", { class: "sub" }, holding ? "Now tap the day you'll cook it." : "Hold a recipe, then drag it onto its day."),
+        onclick: () => { if (Date.now() - dragEndAt < 400) return; holding = holding === r.id ? null : r.id; renderWeek(); } }, doodleFor(r, "xs"), r.title, readOnly ? null : el("span", { class: "grip", "aria-hidden": "true" }, icon("grip"))), r.id, ""); })),
+    el("p", { class: "sub" }, holding ? "Now tap the day you'll cook it." : "Drag a recipe onto its day. To move a dinner later, drag it by its ⠿ handle."),
     el("button", { class: "pill ghost", disabled: readOnly, onclick: autoFill }, "Fill the empty days for me"))
-    : el("div", { class: "waiting tray", "data-day": "" }, el("p", { class: "sub" }, "Every dinner has a day. Hold one and drag it to another day to move it, or drop it here to take it off the calendar."));
+    : el("div", { class: "waiting tray", "data-day": "" }, el("p", { class: "sub" }, "Every dinner has a day. Drag one by its ⠿ handle to another day, or drop it here to take it off the calendar."));
   fill(v, head, weekOver() ? newWeekCard() : null, waiting, cal, el("div", { class: "step-foot" }, nextStep("Next: groceries", "list")));
 }
 // ---- drag & drop on the calendar: hold a recipe, drag it onto a day. Dropping on a day that has a dinner swaps them.
@@ -1093,12 +1099,17 @@ function endDrag(cancel) {
   document.addEventListener("touchstart", (e) => {
     const src = srcAt(e.target); if (!src || e.touches.length > 1) return;
     const t = e.touches[0];
-    press = { src, x: t.clientX, y: t.clientY, touch: true, timer: setTimeout(() => { if (press) { startDrag(press.src, press.x, press.y); press = null; } }, 230) };
+    const instant = !!(e.target.closest(".grip") || src.classList.contains("wchip"));
+    press = { src, x: t.clientX, y: t.clientY, touch: true, instant, timer: setTimeout(() => { if (press) { startDrag(press.src, press.x, press.y); press = null; } }, 230) };
   }, { passive: true });
   document.addEventListener("touchmove", (e) => {
     const t = e.touches[0];
     if (drag) { e.preventDefault(); moveDrag(t.clientX, t.clientY); return; }
-    if (press && Math.hypot(t.clientX - press.x, t.clientY - press.y) > 8) { clearTimeout(press.timer); press = null; }
+    if (press && Math.hypot(t.clientX - press.x, t.clientY - press.y) > 6) {
+      clearTimeout(press.timer);
+      if (press.instant) { e.preventDefault(); startDrag(press.src, t.clientX, t.clientY); }
+      press = null;
+    }
   }, { passive: false });
   const touchEnd = (cancel) => () => { if (press) { clearTimeout(press.timer); press = null; } if (drag) endDrag(cancel); };
   document.addEventListener("touchend", touchEnd(false));
