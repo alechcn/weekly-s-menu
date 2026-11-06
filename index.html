@@ -181,6 +181,17 @@ h2 b { font-weight: 700; }
 .cook-ing .done .nm { opacity: .45; text-decoration: line-through; }
 .cook-ing small { display: block; font-size: 13px; color: var(--muted, rgba(23, 22, 20, .65)); }
 .cook-ing .q { font-size: 15px; font-variant-numeric: tabular-nums; }
+.dragsrc { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.cmeal.dragsrc { cursor: grab; border-radius: 10px; }
+.dragging-src { opacity: .35; }
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; display: flex; align-items: center; gap: 8px; max-width: 240px; padding: 6px 12px 6px 6px; border-radius: 12px; background: var(--blk); color: var(--blk-text); font-weight: 700; font-size: 14px; line-height: 1.2; box-shadow: 0 12px 28px rgba(23, 22, 20, .35); transform-origin: 24px 30px; rotate: -3deg; }
+body.is-dragging { cursor: grabbing; }
+body.is-dragging #v-week .cday, body.is-dragging #v-week .waiting { box-shadow: inset 0 0 0 2px rgba(23, 22, 20, .18); }
+#v-week .drop-over { box-shadow: inset 0 0 0 3px var(--ink) !important; transform: scale(1.02); transition: transform .12s; }
+.wchip { display: inline-flex; align-items: center; gap: 8px; background: var(--blk, transparent) !important; color: var(--blk-text, var(--ink)) !important; box-shadow: none !important; padding: 4px 14px 4px 4px !important; }
+.wchip[aria-pressed="true"] { outline: 3px solid var(--ink); outline-offset: 2px; }
+.blk.xs { width: 32px; height: 32px; border-radius: 99px; }
+.waiting.tray { padding: 12px 16px; background: rgba(247, 240, 230, .55); }
 .seg { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--card); align-self: flex-start; }
 .seg button { border: 0; border-radius: 999px; min-height: 40px; padding: 0 16px; font: inherit; font-size: 14px; font-weight: 600; background: transparent; color: var(--ink); cursor: pointer; }
 .seg button[aria-selected="true"] { background: var(--ink); color: var(--card); }
@@ -1007,24 +1018,100 @@ function renderWeek() {
     const meals = picked.filter((r) => plan.days[r.id] === d.key);
     const note = (plan.notes[d.key] || "").trim();
     const blk = meals.length ? blockOf(meals[0]) : null;
-    return el("button", { style: blk ? "--day-bg:" + blk.bg + ";--day-text:" + blk.text : "", class: "cday" + (d.out ? " out" : "") + (meals.length ? " has" : "") + (d.key === today ? " today" : "") + (holding ? " drop" : ""),
+    return el("button", { "data-day": d.key, style: blk ? "--day-bg:" + blk.bg + ";--day-text:" + blk.text : "", class: "cday" + (d.out ? " out" : "") + (meals.length ? " has" : "") + (d.key === today ? " today" : "") + (holding ? " drop" : ""),
       disabled: readOnly, "aria-label": d.long + (meals.length ? ": " + meals.map((r) => r.title).join(", ") : d.out ? ": night out" : ": nothing planned") + (note ? ". Reminder: " + note : ""),
-      onclick: () => (holding ? placeHeld(d.key) : openDay(d.key)) },
+      onclick: () => { if (Date.now() - dragEndAt < 400) return; holding ? placeHeld(d.key) : openDay(d.key); } },
       el("span", { class: "cday-h" }, el("span", { class: "cdn" }, d.short), el("span", { class: "cdd" }, d.num)),
-      meals.length ? meals.map((r) => el("span", { class: "cmeal" }, doodleFor(r, "sm"), el("span", {}, r.title, byTag(plan.by[r.id]))))
+      meals.length ? meals.map((r) => draggable(el("span", { class: "cmeal" }, doodleFor(r, "sm"), el("span", {}, r.title, byTag(plan.by[r.id]))), r.id, d.key))
         : el("span", { class: "cempty" }, holding ? "Place here" : d.out ? "Night out" : "+ Add dinner"),
       note ? el("span", { class: "cnote" }, note) : null);
   }));
   const undated = picked.filter((r) => !days.some((d) => d.key === plan.days[r.id]));
   if (holding && !undated.some((r) => r.id === holding)) holding = null;
-  const waiting = undated.length ? el("div", { class: "waiting" },
+  const waiting = undated.length ? el("div", { class: "waiting", "data-day": "" },
     el("p", { class: "label" }, undated.length + (undated.length > 1 ? " recipes" : " recipe") + " without a day"),
-    el("div", { class: "chips" }, undated.map((r) => el("button", { class: "wchip", disabled: readOnly, "aria-pressed": holding === r.id ? "true" : "false",
-      onclick: () => { holding = holding === r.id ? null : r.id; renderWeek(); } }, r.title))),
-    el("p", { class: "sub" }, holding ? "Now tap the day you'll cook it." : "Tap a recipe, then tap its day."),
-    el("button", { class: "pill ghost", disabled: readOnly, onclick: autoFill }, "Fill the empty days for me")) : null;
+    el("div", { class: "chips" }, undated.map((r) => { const b = blockOf(r);
+      return draggable(el("button", { class: "wchip", disabled: readOnly, "aria-pressed": holding === r.id ? "true" : "false", style: "--blk:" + b.bg + ";--blk-text:" + b.text,
+        onclick: () => { if (Date.now() - dragEndAt < 400) return; holding = holding === r.id ? null : r.id; renderWeek(); } }, doodleFor(r, "xs"), r.title), r.id, ""); })),
+    el("p", { class: "sub" }, holding ? "Now tap the day you'll cook it." : "Hold a recipe, then drag it onto its day."),
+    el("button", { class: "pill ghost", disabled: readOnly, onclick: autoFill }, "Fill the empty days for me"))
+    : el("div", { class: "waiting tray", "data-day": "" }, el("p", { class: "sub" }, "Every dinner has a day. Hold one and drag it to another day to move it, or drop it here to take it off the calendar."));
   fill(v, head, weekOver() ? newWeekCard() : null, waiting, cal, el("div", { class: "step-foot" }, nextStep("Next: groceries", "list")));
 }
+// ---- drag & drop on the calendar: hold a recipe, drag it onto a day. Dropping on a day that has a dinner swaps them.
+let drag = null, dragEndAt = 0;
+function draggable(node, rid, from) {
+  if (readOnly) return node;
+  node.classList.add("dragsrc");
+  node.dataset.rid = rid; node.dataset.from = from;
+  return node;
+}
+function dropTargetAt(x, y) {
+  const t = document.elementFromPoint(x, y);
+  return t ? t.closest("#v-week [data-day]") : null;
+}
+function startDrag(src, x, y) {
+  const r = recipes.find((z) => z.id === src.dataset.rid); if (!r) return;
+  const b = blockOf(r);
+  const ghost = el("div", { class: "drag-ghost", style: "--blk:" + b.bg + ";--blk-text:" + b.text }, doodleFor(r, "sm"), el("span", {}, r.title));
+  document.body.appendChild(ghost);
+  drag = { rid: r.id, from: src.dataset.from, ghost, over: null, x, y, src };
+  src.classList.add("dragging-src");
+  document.body.classList.add("is-dragging");
+  try { navigator.vibrate && navigator.vibrate(15); } catch {}
+  moveDrag(x, y);
+  const loop = () => { if (!drag) return; const top = 120, bottom = innerHeight - 150; if (drag.y < top) window.scrollBy(0, -Math.ceil((top - drag.y) / 6)); else if (drag.y > bottom) window.scrollBy(0, Math.ceil((drag.y - bottom) / 6)); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+}
+function moveDrag(x, y) {
+  drag.x = x; drag.y = y;
+  drag.ghost.style.transform = "translate(" + (x - 24) + "px," + (y - 30) + "px)";
+  const t = dropTargetAt(x, y);
+  if (t !== drag.over) { if (drag.over) drag.over.classList.remove("drop-over"); drag.over = t; if (t) t.classList.add("drop-over"); }
+}
+function endDrag(cancel) {
+  if (!drag) return;
+  const { rid, from, over, ghost, src } = drag;
+  ghost.remove(); src.classList.remove("dragging-src"); if (over) over.classList.remove("drop-over");
+  document.body.classList.remove("is-dragging");
+  drag = null; dragEndAt = Date.now();
+  if (cancel || !over) return;
+  const to = over.dataset.day;
+  if (to === from) return;
+  const days = weekDays();
+  const others = pickedRecipes().filter((r) => r.id !== rid && to && plan.days[r.id] === to);
+  others.forEach((o) => { if (from) plan.days[o.id] = from; else delete plan.days[o.id]; });
+  if (to) plan.days[rid] = to; else delete plan.days[rid];
+  holding = null;
+  render(); savePlan();
+  const d = days.find((x) => x.key === to), r = recipes.find((x) => x.id === rid);
+  toast(!to ? (r ? r.title : "Recipe") + " taken off the calendar" : others.length && from ? "Swapped with " + others[0].title : "Moved to " + d.short + " " + d.num);
+}
+(() => {
+  let press = null; // { src, x, y, timer, touch }
+  const srcAt = (t) => (t && t.closest ? t.closest("#v-week .dragsrc") : null);
+  document.addEventListener("touchstart", (e) => {
+    const src = srcAt(e.target); if (!src || e.touches.length > 1) return;
+    const t = e.touches[0];
+    press = { src, x: t.clientX, y: t.clientY, touch: true, timer: setTimeout(() => { if (press) { startDrag(press.src, press.x, press.y); press = null; } }, 230) };
+  }, { passive: true });
+  document.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    if (drag) { e.preventDefault(); moveDrag(t.clientX, t.clientY); return; }
+    if (press && Math.hypot(t.clientX - press.x, t.clientY - press.y) > 8) { clearTimeout(press.timer); press = null; }
+  }, { passive: false });
+  const touchEnd = (cancel) => () => { if (press) { clearTimeout(press.timer); press = null; } if (drag) endDrag(cancel); };
+  document.addEventListener("touchend", touchEnd(false));
+  document.addEventListener("touchcancel", touchEnd(true));
+  document.addEventListener("contextmenu", (e) => { if (srcAt(e.target) || drag) e.preventDefault(); });
+  document.addEventListener("mousedown", (e) => { if (e.button !== 0) return; const src = srcAt(e.target); if (src) press = { src, x: e.clientX, y: e.clientY, touch: false }; });
+  document.addEventListener("mousemove", (e) => {
+    if (drag) { e.preventDefault(); moveDrag(e.clientX, e.clientY); return; }
+    if (press && !press.touch && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) { startDrag(press.src, e.clientX, e.clientY); press = null; }
+  });
+  document.addEventListener("mouseup", () => { press = null; if (drag) endDrag(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drag) endDrag(true); });
+})();
 // Who's using this phone
 function renderMe() {
   const c = $("#meChip"); if (!c) return;
