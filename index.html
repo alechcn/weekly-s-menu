@@ -57,6 +57,7 @@ svg.doodle .fill { fill: var(--ink); stroke: none; }
 .by .av { width: 18px; height: 18px; font-size: 10px; }
 .cmeal .by { display: flex; margin-top: 2px; }
 .row.picked .by { color: inherit; opacity: .9; }
+.who-other summary { cursor: pointer; font-size: 14px; color: var(--muted, rgba(23, 22, 20, .65)); padding: 8px 0; }
 .who-list { display: flex; flex-direction: column; gap: 8px; }
 .who-list .pill { justify-content: flex-start; }
 .top-in { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 12px; }
@@ -411,8 +412,15 @@ const MAX = 5;
 let recipes = [];
 let plan = { picked: [], have: {}, cart: {}, days: {}, notes: {}, extras: [], week: null, qty: {}, by: {} };
 // Who's using this phone (kept on the phone). Picks and added items are tagged with this name in plan.by / extras[].by.
+const HOUSE = ["Ale", "Anatole"];
 let me = ""; try { me = localStorage.getItem("wm-me") || ""; } catch {}
-let people = []; // names used so far (meta/people), shared by both phones
+// A personal link (?me=Ale or ?me=Anatole) sets this phone once, then the address is cleaned.
+try {
+  const q = new URLSearchParams(location.search).get("me");
+  const hit = q && HOUSE.find((n) => n.toLowerCase() === q.trim().toLowerCase());
+  if (hit) { me = hit; localStorage.setItem("wm-me", hit); history.replaceState(null, "", location.pathname + location.hash); }
+} catch {}
+let people = [...HOUSE]; // names used so far (meta/people), shared by both phones
 let peopleRef = null;
 const whoLabel = (n) => (n && n === me ? "You" : n || "");
 const initial = (n) => (n || "?").trim().charAt(0).toUpperCase();
@@ -947,11 +955,12 @@ function openWho() {
     $("#dlg").close(); renderMe(); render(); toast("Hi " + n + "! Your picks will show your name");
   };
   sheet(el("h3", { id: "dlgTitle" }, "Who's using this phone?"),
-    el("p", { class: "sub" }, "So you can both see who chose each recipe and who added what to the groceries."),
+    el("p", { class: "sub" }, "Tap your name once. This phone remembers it."),
     people.length ? el("div", { class: "who-list" }, people.map((n) => el("button", { class: "pill" + (n === me ? "" : " ghost"), onclick: () => choose(n) },
       el("span", { class: "by" }, el("span", { class: "av", "aria-hidden": "true" }, initial(n))), n, n === me ? icon("check") : null))) : null,
-    el("form", { class: "extra-add", onsubmit: (e) => { e.preventDefault(); choose(inp.value); } }, inp,
-      el("button", { class: "pill", type: "submit", "aria-label": "Save name" }, icon("check"))));
+    el("details", { class: "who-other" }, el("summary", {}, "Someone else"),
+      el("form", { class: "extra-add", onsubmit: (e) => { e.preventDefault(); choose(inp.value); } }, inp,
+        el("button", { class: "pill", type: "submit", "aria-label": "Save name" }, icon("check")))));
 }
 $("#meChip").addEventListener("click", openWho);
 renderMe();
@@ -1507,7 +1516,7 @@ if (!me) setTimeout(() => { if (!me && !$("#dlg").open) openWho(); }, 900);
   peopleRef = db.doc("meta/people");
   peopleRef.onSnapshot((snap) => {
     const d = snap.exists ? snap.data() : {};
-    people = Array.isArray(d.names) ? d.names.filter((n) => typeof n === "string" && n.trim()).slice(0, 6) : [];
+    people = [...new Set([...HOUSE, ...(Array.isArray(d.names) ? d.names.filter((n) => typeof n === "string" && n.trim()) : [])])].slice(0, 6);
     renderMe();
   }, () => {});
   planRef = db.doc("plan/current");
