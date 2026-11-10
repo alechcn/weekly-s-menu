@@ -1,6 +1,6 @@
 """Build the Cloudflare copy of Weekly Menu.
 Usage: python3 build.py <weekly-menu.html> <recipes-export-dir>
-Writes public/ (page + icons) and seed.sql (catalog recipes for the first deploy)."""
+Writes public/ (page + icons) and src/seed.json (catalog recipes loaded on the first visit)."""
 import json, glob, os, sys, shutil
 src, export = sys.argv[1], sys.argv[2]
 here = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +24,7 @@ window.STANDALONE = true; window.CLOUD = true;
       + '<h3 style="margin:0 0 8px;font-size:20px">Household code</h3><p style="margin:0 0 16px;font-size:15px;opacity:.75"></p>'
       + '<input type="password" autocomplete="current-password" style="width:100%;box-sizing:border-box;min-height:48px;border-radius:14px;border:1.5px solid #171614;padding:0 14px;font-size:16px;background:#fff">'
       + '<button style="margin-top:12px;width:100%;min-height:48px;border:0;border-radius:999px;background:#171614;color:#fff;font-size:16px;font-weight:600">Open the menu</button></div>';
-    box.querySelector("p").textContent = msg || "Type the code you two share. This phone remembers it.";
+    box.querySelector("p").textContent = msg || "First time? Choose a code (4+ characters) and share it with each other. This phone remembers it.";
     box.onsubmit = (e) => { e.preventDefault(); code = box.querySelector("input").value.trim(); try { localStorage.setItem(KEY, code); } catch {} box.remove(); pull(true); };
     document.body.appendChild(box); setTimeout(() => box.querySelector("input").focus(), 50);
   }
@@ -74,10 +74,9 @@ open(os.path.join(pub, "index.html"), "w").write(s)
 root = os.path.dirname(here)
 for f in ("apple-touch-icon.png", "icon-192.png", "icon-512.png", "manifest.json"):
     if os.path.exists(os.path.join(root, f)): shutil.copy(os.path.join(root, f), pub)
-rows = []
+seed = {}
 for f in sorted(glob.glob(os.path.join(export, "recipes", "*.json"))):
     d = json.load(open(f)); data = d.get("data", d); rid = d.get("id") or os.path.basename(f)[:-5]
-    q = lambda x: "'" + x.replace("'", "''") + "'"
-    rows.append("INSERT OR IGNORE INTO docs (col, id, data) VALUES ('recipes', %s, %s);" % (q(rid), q(json.dumps(data, ensure_ascii=False))))
-open(os.path.join(here, "seed.sql"), "w").write("\n".join(rows) + "\n")
-print(len(s), len(rows))
+    seed[rid] = data
+json.dump(seed, open(os.path.join(here, "src", "seed.json"), "w"), ensure_ascii=False)
+print(len(s), len(seed))

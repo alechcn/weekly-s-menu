@@ -1,5 +1,3 @@
-cloudflare/public/
-cloudflare/seed.sql
 cloudflare/.dev.vars
 cloudflare/.wrangler/
 node_modules/
