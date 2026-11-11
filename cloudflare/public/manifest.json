@@ -1,7 +1,6 @@
 {
   "name": "Weekly Menu",
   "short_name": "Weekly Menu",
-  "start_url": ".",
   "display": "standalone",
   "background_color": "#86B8B8",
   "theme_color": "#86B8B8",
@@ -16,5 +15,6 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]
+  ],
+  "scope": "/"
 }

@@ -19,3 +19,10 @@ Personal links: `https://<worker>.workers.dev/?me=Ale` and `https://<worker>.wor
     python3 build.py ../path/to/weekly-menu.html <recipes-export-dir>
 
 Writes `public/` and `src/seed.json`.
+
+## What runs here
+- Live app: https://weekly-menu.alechaconl55.workers.dev (personal links `?me=Ale`, `?me=Anatole`; the code is kept in the address as `k=` so a home-screen icon opens straight in).
+- Recipe reading (link, screenshot, translation) uses Workers AI (`[ai]` binding, Llama 4 Scout). `/api/page` fetches a recipe page and keeps its schema.org Recipe data.
+- Offline: `sw.js` caches the app; the page keeps the last state and an outbox of changes in localStorage.
+- Backups: every Monday 03:00 UTC into the `backups` table (last 12), plus "Download a backup of everything" in the Catalog (`/api/export`).
+- The GitHub Pages root now redirects here.
