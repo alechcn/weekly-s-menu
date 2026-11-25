@@ -401,6 +401,8 @@ dialog::backdrop { background: rgba(35, 64, 63, .55); }
 .note { padding: 14px 16px; background: var(--lime); border-radius: 18px; font-size: 15px; }
 .note b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
 .danger { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.danger { margin-top: 8px; padding-top: 16px; border-top: 1px dashed currentColor; }
+.del-btn { color: #b3261e; border-color: #b3261e; }
 
 /* add form */
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500; }
@@ -1673,10 +1675,10 @@ function openRecipe(r) {
         el("li", {}, el("span", {}, i.name, i.note ? el("small", {}, i.note) : null), el("span", { class: "qty" }, qtyText(i)))))),
     steps.length ? el("div", {}, el("h4", {}, "Steps"), el("ol", { class: "steps" }, steps.map((s) => el("li", {}, el("span", {}, s))))) : null,
     r.lunchbox ? el("div", { class: "note" }, el("b", {}, "For the lunchbox"), r.lunchbox) : null,
-    r.manual && !readOnly && dbRef ? el("div", { class: "danger" },
-      el("button", { class: "text-btn", onclick: (e) => {
+    !readOnly && dbRef ? el("div", { class: "danger" },
+      el("button", { class: "pill ghost del-btn", onclick: (e) => {
         e.currentTarget.parentElement.replaceChildren(
-          el("span", {}, "Delete this recipe for good?"),
+          el("span", {}, "Delete \u201c" + r.title + "\u201d from the catalog for both of you?"),
           el("button", { class: "pill", onclick: async () => {
             try {
               await dbRef.collection("recipes").doc(r.id).delete();
@@ -1685,7 +1687,7 @@ function openRecipe(r) {
             } catch { toast("Couldn't delete the recipe. Try again."); }
           } }, "Delete"),
           el("button", { class: "pill ghost", onclick: () => openRecipe(r) }, "Cancel"));
-      } }, "Delete recipe")) : null);
+      } }, icon("close"), "Delete this recipe")) : null);
   return d;
 }
 
